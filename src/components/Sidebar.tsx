@@ -318,6 +318,16 @@ export default function Sidebar() {
                   Apply Leave
                 </button>
 
+                <button
+                  onClick={() => router.push("/admin/acc-raa-referral")}
+                  className={navSubButtonClass(
+                    pathname.startsWith("/admin/acc-raa-referral") &&
+                      !pathname.startsWith("/admin/acc-raa-referral"),
+                  )}
+                >
+                  Acc-Raa Referral
+                </button>
+
                 {canHandleLeaveApprovals && (
                   <button
                     onClick={() => router.push("/dashboard/leave/approvals")}
