@@ -52,49 +52,51 @@ export default function Sidebar() {
       return "";
     }
   };
-useEffect(() => {
-  async function loadProfile() {
-    const token = localStorage.getItem("token");
-    if (!token) return;
 
-    const tokenEmail = getEmailFromToken(token);
-    if (tokenEmail) setUserEmail(tokenEmail);
+  useEffect(() => {
+    async function loadProfile() {
+      const token = localStorage.getItem("token");
+      if (!token) return;
 
-    const storedIsAdmin = localStorage.getItem("isAdmin") === "true";
-    setIsAdminUser(storedIsAdmin);
+      const tokenEmail = getEmailFromToken(token);
+      if (tokenEmail) {
+        setUserEmail(tokenEmail);
+      }
 
-    try {
-      const res = await fetch("/api/user/profile", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      // Check localStorage for isAdmin flag first
+      const storedIsAdmin = localStorage.getItem("isAdmin") === "true";
+      setIsAdminUser(storedIsAdmin);
 
-      if (!res.ok) return;
+      try {
+        const res = await fetch("/api/user/profile", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
 
-      const data = await res.json();
-      if (!data || typeof data !== "object") return;
+        if (!res.ok) return;
 
-      const profile = data as {
-        name?: string;
-        email?: string;
-        role?: string;
-      };
+        const data = await res.json();
+        if (!data || typeof data !== "object") return;
 
-      const resolvedName = (profile.name || "").trim();
-      setUserName(resolvedName);
-      setUserEmail(profile.email || tokenEmail || "");
-      const normalizedRole = normalizeRole(profile.role);
-      setUserRole(normalizedRole);
+        const profile = data as {
+          name?: string;
+          email?: string;
+          role?: string;
+        };
 
-      console.log("Real userRole from API:", normalizedRole, "isAdminUser:", storedIsAdmin);
+        const resolvedName = (profile.name || "").trim();
+        setUserName(resolvedName);
+        setUserEmail(profile.email || tokenEmail || "");
+        setUserRole(normalizeRole(profile.role));
 
-    } catch (err) {
-      console.error("Profile load error:", err);
+
+        
+      } catch (err) {
+        console.error("Profile load error:", err);
+      }
     }
-  }
 
-  loadProfile();
-}, [pathname]);
-  
+    loadProfile();
+  }, [pathname]);
 
   const isAdmin =
     isAdminUser || userRole === "Admin" || pathname.startsWith("/admin/");
