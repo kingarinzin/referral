@@ -17,7 +17,7 @@ export async function POST(req: Request) {
     }
 
     const client = await clientPromise;
-    const db = client.db("civic_leave_db");
+    const db = client.db("referral_db");
     const users = db.collection("users");
 
     const user = await users.findOne({ email });
