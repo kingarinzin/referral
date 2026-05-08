@@ -16,7 +16,7 @@ export async function verifyAdmin(req: Request): Promise<{ valid: true; userId: 
     
     // Verify admin status in database
     const client = await clientPromise;
-    const db = client.db("civic_leave_db");
+    const db = client.db("referral_db");
     const user = await db.collection("users").findOne({ _id: new ObjectId(decoded.id) });
 
     if (!user || !user.isAdmin) {
