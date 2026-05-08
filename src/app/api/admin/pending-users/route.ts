@@ -11,7 +11,7 @@ export async function GET(req: Request) {
     }
 
     const client = await clientPromise;
-    const db = client.db("civic_leave_db");
+    const db = client.db("referral_db");
 
     // Fetch departments & divisions first
     const departments = await db.collection("departments").find().toArray();

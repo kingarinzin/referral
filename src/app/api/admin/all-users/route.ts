@@ -15,7 +15,7 @@ export async function GET(req: Request) {
 
     // 🔌 2️⃣ Connect DB
     const client = await clientPromise;
-    const db = client.db("civic_leave_db");
+    const db = client.db("referral_db");
 
     // 📦 3️⃣ Fetch Users
     const allUsers = await db

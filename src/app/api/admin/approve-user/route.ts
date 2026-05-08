@@ -30,7 +30,7 @@ export async function POST(req: Request) {
     }
 
     const client = await clientPromise;
-    const db = client.db("civic_leave_db");
+    const db = client.db("referral_db");
 
     // Get user info before updating
     const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
