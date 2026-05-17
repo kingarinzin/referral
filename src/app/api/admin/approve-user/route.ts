@@ -1,119 +1,120 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
+import { getUserFromToken } from "@/lib/get-user-from-token";
 import { ObjectId } from "mongodb";
-import { verifyAdmin } from "@/lib/admin-auth";
-const nodemailer = require("nodemailer");
-
-function createTransporter() {
-  return nodemailer.createTransport({
-    host: "smtp.gmail.com",
-    port: 587,
-    secure: false,
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASSWORD,
-    },
-  });
-}
 
 export async function POST(req: Request) {
   try {
-    const adminCheck = await verifyAdmin(req);
-    if (!adminCheck.valid) {
-      return NextResponse.json({ error: adminCheck.error }, { status: 403 });
+    const currentUser = await getUserFromToken(req);
+    if (!currentUser) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    
+    // Check if user has admin privileges (super admin OR agency admin)
+    if (!currentUser.isAdmin && !currentUser.isAgencyAdmin) {
+      return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
-    const { userId, action } = await req.json(); // action: 'approve' or 'reject'
+    const { userId, action } = await req.json();
+    if (!userId || !action) {
+      return NextResponse.json({ error: "User ID and action are required" }, { status: 400 });
+    }
 
-    if (!userId || !['approve', 'reject'].includes(action)) {
-      return NextResponse.json({ error: "Invalid request" }, { status: 400 });
+    if (action !== "approve" && action !== "reject") {
+      return NextResponse.json({ error: "Action must be 'approve' or 'reject'" }, { status: 400 });
     }
 
     const client = await clientPromise;
     const db = client.db("referral_db");
 
-    // Get user info before updating
-    const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
-    if (!user) {
+    // Get the user being approved/rejected
+    const userToApprove = await db.collection("users").findOne({
+      _id: new ObjectId(userId),
+    });
+    
+    if (!userToApprove) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Get admin info
-    const admin = await db.collection("users").findOne({ _id: new ObjectId(adminCheck.userId) });
+    // If current user is agency admin (not super admin), verify the user belongs to their agency
+    if (!currentUser.isAdmin && currentUser.isAgencyAdmin) {
+      // Get the user's department to find their agency
+      const department = await db.collection("departments").findOne({
+        _id: new ObjectId(userToApprove.departmentId),
+      });
+      
+      const userAgencyId = department?.agencyId?.toString();
+      const adminAgencyId = currentUser.agencyId?.toString();
+      
+      if (userAgencyId !== adminAgencyId) {
+        return NextResponse.json(
+          { error: "You can only approve/reject users from your own agency" },
+          { status: 403 }
+        );
+      }
+    }
 
-    const updateData = {
-      isApproved: action === 'approve',
-      approvalStatus: action === 'approve' ? 'approved' : 'rejected',
-      approvedBy: new ObjectId(adminCheck.userId),
-      approvedAt: new Date(),
-    };
+    // Update user status based on action
+    const status = action === "approve" ? "approved" : "rejected";
+    const isApproved = action === "approve";
+    const isActive = action === "approve";
 
-    // Update user status
     const result = await db.collection("users").updateOne(
       { _id: new ObjectId(userId) },
-      { $set: updateData }
+      {
+        $set: {
+          approvalStatus: status,
+          isApproved: isApproved,
+          isActive: isActive,
+          updatedAt: new Date(),
+        },
+      }
     );
 
     if (result.matchedCount === 0) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Send email notification to user
-    try {
-      const transporter = createTransporter();
-      const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-      const userName = user.name || user.email.split("@")[0];
-
-      if (action === "approve") {
-        // Approval email
+    // Optional: Send email notification to the user
+    if (action === "approve") {
+      try {
+        const nodemailer = require("nodemailer");
+        const transporter = nodemailer.createTransport({
+          host: "smtp.gmail.com",
+          port: 587,
+          secure: false,
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASSWORD,
+          },
+        });
+        
         await transporter.sendMail({
           from: process.env.EMAIL_USER,
-          to: user.email,
-          subject: "Account Approved - Welcome to E-Sign!",
+          to: userToApprove.email,
+          subject: "Your Account Has Been Approved",
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #10b981;">Account Approved! 🎉</h2>
-              <p>Hi ${userName},</p>
-              <p>Great news! Your app registration has been approved by ${admin?.name || "an administrator"}.</p>
-              <p>You can now log in and start using app for.......</p>
-              <a href="${appUrl}/login" 
-                 style="display: inline-block; background: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 20px;">
-                Login to Your Account
-              </a>
-              <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-                If you have any questions, please contact your administrator.
-              </p>
+              <h2 style="color: #2563eb;">Account Approved</h2>
+              <p>Hi ${userToApprove.name || userToApprove.email},</p>
+              <p>Your account has been approved! You can now log in to the system.</p>
+              <p>Click the link below to login:</p>
+              <a href="${process.env.NEXTAUTH_URL || "http://localhost:3000"}/login" style="background-color: #2563eb; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Login to Your Account</a>
+              <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">This is an automated message. Please do not reply.</p>
             </div>
           `,
         });
-      } else {
-        // Rejection email
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
-          to: user.email,
-          subject: "Account Registration Update",
-          html: `
-            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h2 style="color: #ef4444;">Registration Not Approved</h2>
-              <p>Hi ${userName},</p>
-              <p>We regret to inform you that your app account registration was not approved at this time.</p>
-              <p>If you believe this was a mistake or have questions, please contact your administrator.</p>
-              <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
-                Thank you for your interest in E-Sign.
-              </p>
-            </div>
-          `,
-        });
+      } catch (emailError) {
+        console.error("Failed to send approval email:", emailError);
       }
-    } catch (emailError) {
-      console.error("Failed to send user notification email:", emailError);
     }
 
-    return NextResponse.json({ 
-      message: `User ${action === 'approve' ? 'approved' : 'rejected'} successfully. Notification email sent to ${user.email}.`
+    return NextResponse.json({
+      success: true,
+      message: `User ${action === "approve" ? "approved" : "rejected"} successfully`,
     });
   } catch (error) {
-    console.error("Error approving user:", error);
+    console.error("Error processing user approval:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

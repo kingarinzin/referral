@@ -1,5 +1,3 @@
-
-// @ts-nocheck
 "use client";
 
 import { useEffect, useState } from "react";
@@ -7,7 +5,6 @@ import { useRouter, useParams } from "next/navigation";
 import { Loader2, Save, ArrowLeft } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
-// ==================== TYPE DEFINITIONS ====================
 interface Agency {
   _id: string;
   name: string;
@@ -23,32 +20,8 @@ interface Division {
   _id: string;
   name: string;
   departmentId: string;
-  remarks?: string;
 }
 
-interface UserFormData {
-  name: string;
-  cid: string;
-  designation: string;
-  phone: string;
-  email: string;
-  agencyId: string;
-  departmentId: string;
-  divisionId: string;
-  role: string;
-  isActive: boolean;
-}
-
-interface Notification {
-  message: string;
-  type: "success" | "error";
-}
-
-interface UserData {
-  user: UserFormData;
-}
-
-// ==================== HELPER FUNCTIONS ====================
 function getInitials(name: string): string {
   if (!name) return "?";
   const parts = name.trim().split(/\s+/);
@@ -57,7 +30,7 @@ function getInitials(name: string): string {
 }
 
 function getAvatarColor(name: string): string {
-  const colors: string[] = [
+  const colors = [
     "bg-red-100 text-red-700",
     "bg-blue-100 text-blue-700",
     "bg-green-100 text-green-700",
@@ -77,19 +50,15 @@ function getAvatarColor(name: string): string {
   return colors[Math.abs(hash) % colors.length];
 }
 
-// ==================== MAIN COMPONENT ====================
-export default function EditUserPage(): JSX.Element {
+export default function EditUserPage() {
   const router = useRouter();
-  const { id } = useParams() as { id: string };
-  
-  const [loading, setLoading] = useState<boolean>(true);
-  const [saving, setSaving] = useState<boolean>(false);
-  
+  const { id } = useParams();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [agencies, setAgencies] = useState<Agency[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [divisions, setDivisions] = useState<Division[]>([]);
-  
-  const [form, setForm] = useState<UserFormData>({
+  const [form, setForm] = useState({
     name: "",
     cid: "",
     designation: "",
@@ -101,18 +70,23 @@ export default function EditUserPage(): JSX.Element {
     role: "Officer",
     isActive: true,
   });
-  
-  const [notification, setNotification] = useState<Notification | null>(null);
+  const [notification, setNotification] = useState<{ message: string; type: string } | null>(null);
+
+  // Helper to get divisions for a department
+  const getDivisionsForDepartment = (deptId: string) => {
+    return divisions.filter(div => div.departmentId === deptId);
+  };
 
   useEffect(() => {
-    const token: string | null = localStorage.getItem("token");
+    const token = localStorage.getItem("token");
     if (!token) {
       router.push("/login");
       return;
     }
 
-    const fetchData = async (): Promise<void> => {
+    const fetchData = async () => {
       try {
+        // Fetch all data
         const [userRes, agenciesRes, deptRes, divRes] = await Promise.all([
           fetch(`/api/admin/all-users/${id}`, {
             headers: { Authorization: `Bearer ${token}` },
@@ -128,16 +102,10 @@ export default function EditUserPage(): JSX.Element {
           }),
         ]);
 
-        const userData: UserData = await userRes.json();
-        const agenciesData: Agency[] = await agenciesRes.json();
-        const deptData: Department[] = await deptRes.json();
-        let divData: Division[] = await divRes.json();
-
-        // Clean up divisions data - ensure departmentId is a string
-        divData = divData.map((div: Division) => ({
-          ...div,
-          departmentId: (div.departmentId as any)?._id || div.departmentId || ""
-        }));
+        const userData = await userRes.json();
+        const agenciesData = await agenciesRes.json();
+        const deptData = await deptRes.json();
+        const divData = await divRes.json();
 
         setAgencies(Array.isArray(agenciesData) ? agenciesData : []);
         setDepartments(Array.isArray(deptData) ? deptData : []);
@@ -147,8 +115,14 @@ export default function EditUserPage(): JSX.Element {
           throw new Error("User data not found");
         }
 
-        const user: UserFormData = userData.user;
+        const user = userData.user;
         
+        console.log("User data loaded:", {
+          agencyId: user.agencyId,
+          departmentId: user.departmentId,
+          divisionId: user.divisionId
+        });
+
         setForm({
           name: user.name || "",
           cid: user.cid || "",
@@ -162,12 +136,9 @@ export default function EditUserPage(): JSX.Element {
           isActive: user.isActive !== undefined ? user.isActive : true,
         });
         
-      } catch (err) {
+      } catch (err: any) {
         console.error("Fetch error:", err);
-        setNotification({ 
-          message: err instanceof Error ? err.message : "Failed to load data", 
-          type: "error" 
-        });
+        setNotification({ message: err.message || "Failed to load data", type: "error" });
       } finally {
         setLoading(false);
       }
@@ -176,8 +147,9 @@ export default function EditUserPage(): JSX.Element {
     fetchData();
   }, [id, router]);
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>): void => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value, type } = e.target;
+    
     if (type === "checkbox") {
       const target = e.target as HTMLInputElement;
       setForm({ ...form, [name]: target.checked });
@@ -186,13 +158,13 @@ export default function EditUserPage(): JSX.Element {
     }
   };
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     setNotification(null);
     
     try {
-      const token: string | null = localStorage.getItem("token");
+      const token = localStorage.getItem("token");
       const res = await fetch(`/api/admin/all-users/${id}`, {
         method: "PUT",
         headers: {
@@ -220,28 +192,20 @@ export default function EditUserPage(): JSX.Element {
     }
   };
 
-  // Helper to safely compare IDs
-  const idMatch = (id1: unknown, id2: unknown): boolean => {
-    if (!id1 || !id2) return false;
-    return String(id1) === String(id2);
-  };
-
-  // Filter departments by agency
-  const filteredDepartments: Department[] = form.agencyId
-    ? departments.filter((dept: Department) => idMatch(dept.agencyId, form.agencyId))
+  // Get filtered departments based on selected agency
+  const filteredDepartments = form.agencyId 
+    ? departments.filter(dept => dept.agencyId === form.agencyId)
     : [];
 
-  // Filter divisions by department - Only show divisions that have a valid departmentId
-  const filteredDivisions: Division[] = form.departmentId
-    ? divisions.filter((div: Division) => {
-        return div.departmentId && idMatch(div.departmentId, form.departmentId);
-      })
+  // Get filtered divisions based on selected department
+  const filteredDivisions = form.departmentId
+    ? divisions.filter(div => div.departmentId === form.departmentId)
     : [];
 
-  // Get current selections for display
-  const currentAgency: Agency | undefined = agencies.find((a: Agency) => idMatch(a._id, form.agencyId));
-  const currentDepartment: Department | undefined = departments.find((d: Department) => idMatch(d._id, form.departmentId));
-  const currentDivision: Division | undefined = divisions.find((d: Division) => idMatch(d._id, form.divisionId));
+  // Find selected names for display
+  const selectedAgency = agencies.find(a => a._id === form.agencyId);
+  const selectedDepartment = departments.find(d => d._id === form.departmentId);
+  const selectedDivision = divisions.find(d => d._id === form.divisionId);
 
   if (loading) {
     return (
@@ -318,37 +282,47 @@ export default function EditUserPage(): JSX.Element {
                   <label className="block text-sm font-medium text-gray-700 mb-1">Agency</label>
                   <select name="agencyId" value={form.agencyId} onChange={handleChange} className="w-full border rounded-xl px-4 py-2.5 bg-white">
                     <option value="">-- Select Agency --</option>
-                    {agencies.map((agency: Agency) => (
+                    {agencies.map((agency) => (
                       <option key={agency._id} value={agency._id}>{agency.name}</option>
                     ))}
                   </select>
-                  {currentAgency && <p className="text-xs text-green-600 mt-1">Current: {currentAgency.name}</p>}
+                  {selectedAgency && <p className="text-xs text-green-600 mt-1">✓ Current: {selectedAgency.name}</p>}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Department</label>
-                  <select name="departmentId" value={form.departmentId} onChange={handleChange} className="w-full border rounded-xl px-4 py-2.5 bg-white">
+                  <select 
+                    name="departmentId" 
+                    value={form.departmentId} 
+                    onChange={handleChange} 
+                    disabled={!form.agencyId}
+                    className="w-full border rounded-xl px-4 py-2.5 bg-white disabled:bg-gray-50"
+                  >
                     <option value="">-- Select Department --</option>
-                    {filteredDepartments.map((dept: Department) => (
+                    {filteredDepartments.map((dept) => (
                       <option key={dept._id} value={dept._id}>{dept.name}</option>
                     ))}
                   </select>
-                  {currentDepartment && <p className="text-xs text-green-600 mt-1">Current: {currentDepartment.name}</p>}
+                  {selectedDepartment && <p className="text-xs text-green-600 mt-1">✓ Current: {selectedDepartment.name}</p>}
                 </div>
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Division</label>
-                  <select name="divisionId" value={form.divisionId} onChange={handleChange} className="w-full border rounded-xl px-4 py-2.5 bg-white">
+                  <select 
+                    name="divisionId" 
+                    value={form.divisionId} 
+                    onChange={handleChange} 
+                    disabled={!form.departmentId}
+                    className="w-full border rounded-xl px-4 py-2.5 bg-white disabled:bg-gray-50"
+                  >
                     <option value="">-- Select Division --</option>
-                    {filteredDivisions.map((div: Division) => (
+                    {filteredDivisions.map((div) => (
                       <option key={div._id} value={div._id}>{div.name}</option>
                     ))}
                   </select>
-                  {currentDivision && <p className="text-xs text-green-600 mt-1">Current: {currentDivision.name}</p>}
+                  {selectedDivision && <p className="text-xs text-green-600 mt-1">✓ Current division: {selectedDivision.name}</p>}
                   {form.departmentId && filteredDivisions.length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      No divisions found for this department. Please add divisions first.
-                    </p>
+                    <p className="text-xs text-amber-600 mt-1">⚠️ No divisions found for this department. Add divisions first.</p>
                   )}
                 </div>
 

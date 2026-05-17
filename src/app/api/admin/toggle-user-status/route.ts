@@ -7,43 +7,48 @@ export async function POST(req: Request) {
   try {
     const adminCheck = await verifyAdmin(req);
     if (!adminCheck.valid) {
-      return NextResponse.json({ error: adminCheck.error }, { status: 403 });
+      return NextResponse.json({ error: adminCheck.error }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { userId, isActive } = body;
+    const { userId, isActive } = await req.json();
+    
+    if (!userId) {
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 });
+    }
 
-    if (!userId || typeof isActive !== 'boolean') {
-      return NextResponse.json({ error: "User ID and isActive status are required" }, { status: 400 });
+    if (typeof isActive !== "boolean") {
+      return NextResponse.json({ error: "isActive must be a boolean" }, { status: 400 });
     }
 
     const client = await clientPromise;
-    const db = client.db("civic_leave_db");
+    const db = client.db("referral_db");
 
     // Check if user exists
     const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });
-    
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Prevent admin from deactivating themselves
-    if (adminCheck.userId === userId && !isActive) {
-      return NextResponse.json({ error: "Cannot deactivate your own admin account" }, { status: 400 });
+    // Prevent deactivating super admin
+    if (user.isAdmin === true && isActive === false) {
+      return NextResponse.json({ error: "Cannot deactivate super admin user" }, { status: 403 });
     }
 
-    // Update user status
-    await db.collection("users").updateOne(
+    const result = await db.collection("users").updateOne(
       { _id: new ObjectId(userId) },
-      { $set: { isActive } }
+      { $set: { isActive: isActive, updatedAt: new Date() } }
     );
 
+    if (result.matchedCount === 0) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+
     return NextResponse.json({ 
-      message: `User ${isActive ? 'activated' : 'deactivated'} successfully`,
-      isActive 
+      success: true, 
+      message: `User ${isActive ? "activated" : "deactivated"} successfully` 
     });
   } catch (error) {
-    console.error("Error toggling user status:", error);
+    console.error("Toggle user status error:", error);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

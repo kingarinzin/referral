@@ -3,49 +3,47 @@ import clientPromise from "@/lib/mongodb";
 import { verifyAdmin } from "@/lib/admin-auth";
 import { ObjectId } from "mongodb";
 
+// ===================== GET =====================
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // 1️⃣ Verify Admin
     const adminCheck = await verifyAdmin(req);
     if (!adminCheck.valid) {
       return NextResponse.json(
         { error: adminCheck.error || "Unauthorized" },
-        { status: 401 }
+        { status: 403 }
       );
     }
 
+    // 2️⃣ Await params (Next.js 15+)
     const { id } = await params;
+
+    // 3️⃣ Connect to DB
     const client = await clientPromise;
-    const db = client.db("referral_db");
+    const db = client.db("civic_leave_db");
 
-    if (!ObjectId.isValid(id)) {
-      return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
-    }
-
+    // 4️⃣ Fetch user
     const user = await db.collection("users").findOne({ _id: new ObjectId(id) });
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
+    // 5️⃣ Fetch departments & divisions for name mapping
     const departments = await db.collection("departments").find({}).toArray();
     const divisions = await db.collection("divisions").find({}).toArray();
-    const agencies = await db.collection("agencies").find({}).toArray();
 
+    // 6️⃣ Map department and division names
     const department = departments.find(
       (d) => d._id.toString() === (user.departmentId || "").toString()
     );
     const division = divisions.find(
       (d) => d._id.toString() === (user.divisionId || "").toString()
     );
-    const agency = agencies.find(
-      (a) => a._id.toString() === (user.agencyId || "").toString()
-    );
 
-    console.log("User divisionId:", user.divisionId);
-    console.log("Found division:", division);
-
+    // 7️⃣ Build the response object (matches your all-users list format)
     const mappedUser = {
       _id: user._id.toString(),
       name: user.name || "",
@@ -53,11 +51,7 @@ export async function GET(
       designation: user.designation || "",
       phone: user.phone || "",
       email: user.email || "",
-      agencyId: user.agencyId?.toString() || "",
-      agencyName: agency?.name || "",
-      departmentId: user.departmentId?.toString() || "",
       departmentName: department?.name || "",
-      divisionId: user.divisionId?.toString() || "",
       divisionName: division?.name || "",
       role: user.role || "Officer",
       isActive: user.isActive !== undefined ? user.isActive : true,
@@ -71,67 +65,80 @@ export async function GET(
   }
 }
 
+// ===================== PUT =====================
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    // 1️⃣ Verify Admin
     const adminCheck = await verifyAdmin(req);
     if (!adminCheck.valid) {
       return NextResponse.json(
         { error: adminCheck.error || "Unauthorized" },
-        { status: 401 }
+        { status: 403 }
       );
     }
 
+    // 2️⃣ Await params
     const { id } = await params;
+
+    // 3️⃣ Connect to DB
     const client = await clientPromise;
-    const db = client.db("referral_db");
+    const db = client.db("civic_leave_db");
+
+    // 4️⃣ Get request body
     const body = await req.json();
 
-    if (!ObjectId.isValid(id)) {
-      return NextResponse.json({ error: "Invalid user ID" }, { status: 400 });
-    }
+    // 5️⃣ Allowed fields that are directly stored
+    const allowedDirectFields = [
+      "name",
+      "cid",
+      "designation",
+      "phone",
+      "email",
+      "role",
+      "isActive",
+    ];
 
-    console.log("Updating user with data:", body);
-
-    const updates: Record<string, any> = {
-      name: body.name,
-      cid: body.cid,
-      designation: body.designation,
-      phone: body.phone,
-      email: body.email,
-      role: body.role,
-      isActive: body.isActive,
-      updatedAt: new Date(),
-    };
-
-    if (body.agencyId && body.agencyId !== "") {
-      if (ObjectId.isValid(body.agencyId)) {
-        updates.agencyId = new ObjectId(body.agencyId);
+    // 6️⃣ Build update object
+    const updates: Record<string, any> = {};
+    for (const key of allowedDirectFields) {
+      if (body[key] !== undefined) {
+        updates[key] = body[key];
       }
-    } else {
-      updates.agencyId = null;
     }
 
-    if (body.departmentId && body.departmentId !== "") {
-      if (ObjectId.isValid(body.departmentId)) {
-        updates.departmentId = new ObjectId(body.departmentId);
+    // 7️⃣ Handle departmentName -> departmentId conversion
+    if (body.departmentName !== undefined) {
+      if (body.departmentName && body.departmentName.trim() !== "") {
+        const dept = await db.collection("departments").findOne({ name: body.departmentName });
+        if (dept) {
+          updates.departmentId = dept._id;
+        } else {
+          console.warn(`Department "${body.departmentName}" not found, skipping update`);
+        }
+      } else {
+        // If empty string, remove departmentId (or set to null)
+        updates.departmentId = null;
       }
-    } else {
-      updates.departmentId = null;
     }
 
-    if (body.divisionId && body.divisionId !== "") {
-      if (ObjectId.isValid(body.divisionId)) {
-        updates.divisionId = new ObjectId(body.divisionId);
+    // 8️⃣ Handle divisionName -> divisionId conversion
+    if (body.divisionName !== undefined) {
+      if (body.divisionName && body.divisionName.trim() !== "") {
+        const div = await db.collection("divisions").findOne({ name: body.divisionName });
+        if (div) {
+          updates.divisionId = div._id;
+        } else {
+          console.warn(`Division "${body.divisionName}" not found, skipping update`);
+        }
+      } else {
+        updates.divisionId = null;
       }
-    } else {
-      updates.divisionId = null;
     }
 
-    console.log("Final updates:", updates);
-
+    // 9️⃣ Perform update
     const result = await db.collection("users").updateOne(
       { _id: new ObjectId(id) },
       { $set: updates }

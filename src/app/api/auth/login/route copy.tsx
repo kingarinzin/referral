@@ -86,17 +86,8 @@ export async function POST(req: Request) {
       );
     }
 
-    // Ensure isAgencyAdmin field exists (default false)
-    const isAgencyAdmin = user.isAgencyAdmin === true;
-    const isAdmin = !!user.isAdmin;
-
     const token = jwt.sign(
-      { 
-        id: user._id.toString(), 
-        email: user.email, 
-        isAdmin,
-        isAgencyAdmin,
-      },
+      { id: user._id.toString(), email: user.email, isAdmin: !!user.isAdmin },
       process.env.JWT_SECRET!,
       { expiresIn: "8h" },
     );
@@ -104,9 +95,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       token,
-      isAdmin,
-      isAgencyAdmin,
-      userId: user._id.toString(),
+      isAdmin: !!user.isAdmin,
       requiresOtp: false,
     });
   } catch (error) {

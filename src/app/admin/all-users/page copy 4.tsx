@@ -24,8 +24,6 @@ interface User {
   divisionName: string;
   role: string;
   isActive: boolean;
-  isAdmin: boolean;
-  isAgencyAdmin: boolean;
   createdAt: string;
 }
 
@@ -66,17 +64,13 @@ export default function AllUsersPage() {
     message: string;
     type: "success" | "error";
   } | null>(null);
+
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // Get current admin status from localStorage
-  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
-
   useEffect(() => {
     const token = localStorage.getItem("token");
-    const adminFlag = localStorage.getItem("isAdmin") === "true";
-    setIsSuperAdmin(adminFlag);
     if (!token) {
       router.push("/login");
       return;
@@ -87,15 +81,13 @@ export default function AllUsersPage() {
         const res = await fetch("/api/admin/all-users", {
           headers: { Authorization: `Bearer ${token}` },
         });
+
         if (res.status === 401) {
           localStorage.clear();
           router.push("/login?expired=true");
           return;
         }
-        if (!res.ok) {
-          setNotification({ message: "Failed to load users", type: "error" });
-          return;
-        }
+
         const data = await res.json();
         setUsers(data.users || []);
       } catch (err) {
@@ -104,6 +96,7 @@ export default function AllUsersPage() {
         setLoading(false);
       }
     }
+
     fetchUsers();
   }, [router]);
 
@@ -177,6 +170,7 @@ export default function AllUsersPage() {
         },
         body: JSON.stringify({ userId, role: newRole }),
       });
+
       if (res.ok) {
         showNotification("Role updated", "success");
         const refreshed = await fetch("/api/admin/all-users", {
@@ -190,42 +184,6 @@ export default function AllUsersPage() {
       }
     } catch {
       showNotification("Failed to update role", "error");
-    } finally {
-      setActionLoading(null);
-    }
-  };
-
-  // Toggle Agency Admin - handles both promote and demote
-  const toggleAgencyAdmin = async (userId: string, currentStatus: boolean) => {
-    const action = currentStatus ? "demote" : "promote";
-    if (!confirm(`Are you sure you want to ${action} this user ${currentStatus ? "from" : "to"} Agency Admin?`)) return;
-    
-    setActionLoading(userId);
-    try {
-      const token = localStorage.getItem("token");
-      const res = await fetch("/api/admin/set-agency-admin", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify({ userId }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        showNotification(data.message, "success");
-        // Refresh list
-        const refreshed = await fetch("/api/admin/all-users", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const refreshedData = await refreshed.json();
-        setUsers(refreshedData.users || []);
-      } else {
-        showNotification(data.error || "Action failed", "error");
-      }
-    } catch (error) {
-      console.error("Toggle agency admin error:", error);
-      showNotification("Failed to update user", "error");
     } finally {
       setActionLoading(null);
     }
@@ -345,7 +303,7 @@ export default function AllUsersPage() {
                           </div>
                           <span className="text-sm font-medium text-gray-900">{user.name}</span>
                         </div>
-                        </td>
+                      </td>
                       <td className="px-4 py-3 text-sm text-gray-600">{user.cid}</td>
                       <td className="px-4 py-3 text-sm text-gray-600 max-w-[150px] truncate">{user.designation}</td>
                       <td className="px-4 py-3 text-sm text-gray-600">{user.phone}</td>
@@ -358,11 +316,6 @@ export default function AllUsersPage() {
                           <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 w-fit">
                             {user.role}
                           </span>
-                          {user.isAgencyAdmin && (
-                            <span className="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 w-fit">
-                              Agency Admin
-                            </span>
-                          )}
                           <select
                             value={user.role}
                             onChange={(e) => handleRoleChange(user._id, e.target.value)}
@@ -377,7 +330,7 @@ export default function AllUsersPage() {
                             <option value="SecretaryService">Secretary Service</option>
                           </select>
                         </div>
-                        </td>
+                      </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">
                           <button
@@ -411,27 +364,8 @@ export default function AllUsersPage() {
                           >
                             <Trash2 size={12} /> Delete
                           </button>
-                          {isSuperAdmin && (
-                            <button
-                              onClick={() => toggleAgencyAdmin(user._id, user.isAgencyAdmin)}
-                              disabled={actionLoading === user._id}
-                              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition ${
-                                user.isAgencyAdmin
-                                  ? "bg-orange-100 text-orange-700 border border-orange-200 hover:bg-orange-200"
-                                  : "bg-purple-100 text-purple-700 border border-purple-200 hover:bg-purple-200"
-                              }`}
-                            >
-                              {actionLoading === user._id ? (
-                                <Loader2 className="animate-spin" size={12} />
-                              ) : user.isAgencyAdmin ? (
-                                "Demote from Agency Admin"
-                              ) : (
-                                "Make Agency Admin"
-                              )}
-                            </button>
-                          )}
                         </div>
-                        </td>
+                      </td>
                     </tr>
                   ))
                 ) : (

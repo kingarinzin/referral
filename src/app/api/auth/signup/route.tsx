@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import bcrypt from "bcryptjs";
+import { ObjectId } from "mongodb";
+
 const nodemailer = require("nodemailer");
 
 function createTransporter() {
@@ -19,7 +21,7 @@ export async function POST(req: Request) {
   try {
     const {
       name,
-      cid, // <-- fixed here
+      cid,
       designation,
       phone,
       email,
@@ -28,21 +30,9 @@ export async function POST(req: Request) {
       password,
     } = await req.json();
 
-    // ===== Validation =====
-    if (
-      !name ||
-      !cid ||
-      !designation ||
-      !phone ||
-      !email ||
-      !departmentId ||
-      !divisionId ||
-      !password
-    ) {
-      return NextResponse.json(
-        { error: "All fields are required" },
-        { status: 400 },
-      );
+    // Validation
+    if (!name || !cid || !designation || !phone || !email || !departmentId || !divisionId || !password) {
+      return NextResponse.json({ error: "All fields are required" }, { status: 400 });
     }
 
     const client = await clientPromise;
@@ -51,32 +41,51 @@ export async function POST(req: Request) {
 
     const existingUser = await users.findOne({ email });
     if (existingUser) {
-      return NextResponse.json(
-        { error: "Email already registered" },
-        { status: 400 },
-      );
+      return NextResponse.json({ error: "Email already registered" }, { status: 400 });
+    }
+
+    // Convert IDs to ObjectId
+    let deptObjectId, divObjectId;
+    try {
+      deptObjectId = new ObjectId(departmentId);
+      divObjectId = new ObjectId(divisionId);
+    } catch (err) {
+      return NextResponse.json({ error: "Invalid department or division ID" }, { status: 400 });
+    }
+
+    // Get department to extract agencyId
+    const department = await db.collection("departments").findOne({ _id: deptObjectId });
+    if (!department) {
+      return NextResponse.json({ error: "Invalid department" }, { status: 400 });
+    }
+    const agencyId = department.agencyId;
+    if (!agencyId) {
+      return NextResponse.json({ error: "Department missing agency association" }, { status: 500 });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = {
       name,
-      cid, // <-- save lowercase
+      cid,
       designation,
       phone,
       email,
-      departmentId,
-      divisionId,
+      departmentId: deptObjectId,
+      divisionId: divObjectId,
+      agencyId: new ObjectId(agencyId),   // store as ObjectId
       role: "Officer",
       password: hashedPassword,
       isAdmin: false,
+      isAgencyAdmin: false,
       approvalStatus: "pending",
+      isActive: true,
       createdAt: new Date(),
     };
 
     await users.insertOne(newUser);
 
-    // ===== Email notification =====
+    // Email notification (unchanged)
     try {
       const transporter = createTransporter();
       await transporter.sendMail({
@@ -87,7 +96,7 @@ export async function POST(req: Request) {
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #2563eb;">Registration Received</h2>
             <p>Hi ${name},</p>
-            <p>Your account has been created for acc app and is currently <strong>pending approval</strong>.</p>
+            <p>Your account has been created and is currently <strong>pending approval</strong>.</p>
             <p>You will receive an email once an administrator approves your account.</p>
             <p style="color: #6b7280; font-size: 14px; margin-top: 30px;">
               This is an automated message. Please do not reply.
@@ -105,9 +114,6 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("Signup error:", error);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

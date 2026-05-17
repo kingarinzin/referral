@@ -25,6 +25,7 @@ export default function PendingUsersPage() {
     text: string;
     type: "success" | "error";
   } | null>(null);
+
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
@@ -38,39 +39,74 @@ export default function PendingUsersPage() {
 
   useEffect(() => {
     const token = localStorage.getItem("token");
+    const isAdmin = localStorage.getItem("isAdmin") === "true";
+
     if (!token) {
       router.push("/login");
       return;
     }
 
-    async function checkAccessAndFetch() {
+    if (!isAdmin) {
+      setInlineMessage({
+        text: "Admin access required. Redirecting...",
+        type: "error",
+      });
+      setTimeout(() => router.push("/dashboard/leave"), 2000);
+      return;
+    }
+
+    async function checkTokenValidity() {
       try {
-        const res = await fetch("/api/admin/pending-users", {
+        const res = await fetch("/api/user/profile", {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (res.status === 401) {
           localStorage.removeItem("token");
           localStorage.removeItem("isAdmin");
-          localStorage.removeItem("isAgencyAdmin");
           router.push("/login?expired=true");
           return;
         }
-        if (!res.ok) {
-          setInlineMessage({ text: "Access denied or server error", type: "error" });
-          return;
-        }
-        const data = await res.json();
-        setUsers(data.users || []);
       } catch (err) {
-        console.error("Failed to fetch pending users:", err);
-        setInlineMessage({ text: "Failed to load pending users", type: "error" });
-      } finally {
-        setLoading(false);
+        console.error("Token validation error:", err);
       }
     }
 
-    checkAccessAndFetch();
+    checkTokenValidity();
+    fetchPendingUsers();
   }, [router]);
+
+  async function fetchPendingUsers() {
+    try {
+      const token = localStorage.getItem("token");
+      const res = await fetch("/api/admin/pending-users", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("isAdmin");
+        router.push("/login?expired=true");
+        return;
+      }
+
+      if (res.status === 403) {
+        setInlineMessage({
+          text: "Admin access required. Redirecting...",
+          type: "error",
+        });
+        setTimeout(() => router.push("/dashboard/leave"), 2000);
+        return;
+      }
+
+      const data = await res.json();
+      setUsers(data.users || []);
+    } catch (err) {
+      console.error("Failed to fetch pending users:", err);
+      setInlineMessage({ text: "Failed to load pending users", type: "error" });
+    } finally {
+      setLoading(false);
+    }
+  }
 
   async function handleAction(userId: string, action: "approve" | "reject") {
     setActionLoading(userId);
@@ -88,7 +124,6 @@ export default function PendingUsersPage() {
       if (res.status === 401) {
         localStorage.removeItem("token");
         localStorage.removeItem("isAdmin");
-        localStorage.removeItem("isAgencyAdmin");
         router.push("/login?expired=true");
         return;
       }
@@ -98,24 +133,25 @@ export default function PendingUsersPage() {
           text: `User ${action === "approve" ? "approved" : "rejected"} successfully`,
           type: "success",
         });
-        // Refresh list
-        const refreshRes = await fetch("/api/admin/pending-users", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await refreshRes.json();
-        setUsers(data.users || []);
+        fetchPendingUsers();
       } else {
         const data = await res.json();
-        setInlineMessage({ text: data.error || "Action failed", type: "error" });
+        setInlineMessage({
+          text: data.error || "Action failed",
+          type: "error",
+        });
       }
     } catch (err) {
-      setInlineMessage({ text: "Failed to process request", type: "error" });
+      setInlineMessage({
+        text: "Failed to process request",
+        type: "error",
+      });
     } finally {
       setActionLoading(null);
     }
   }
 
-  // Filter & pagination
+  // Filter and pagination
   const filteredUsers = users.filter(
     (u) =>
       u.name?.toLowerCase().includes(search.toLowerCase()) ||

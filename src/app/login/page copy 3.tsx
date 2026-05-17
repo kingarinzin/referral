@@ -30,23 +30,15 @@ function LoginForm() {
         return;
       }
 
-      // Store authentication data
       localStorage.setItem("token", data.token);
       localStorage.setItem("isAdmin", data.isAdmin ? "true" : "false");
-      localStorage.setItem("isAgencyAdmin", data.isAgencyAdmin ? "true" : "false");
 
-      // Redirect logic
       if (returnTo) {
         router.push(returnTo);
         return;
       }
 
-      // Super admin or agency admin → admin pages
-      if (data.isAdmin || data.isAgencyAdmin) {
-        router.push("/admin/pending-users");
-      } else {
-        router.push("/dashboard/leave");
-      }
+      router.push(data.isAdmin ? "/admin/pending-users" : "/dashboard/leave");
     } catch {
       setMessage("Server error");
     }
@@ -55,28 +47,30 @@ function LoginForm() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
       <div className="w-full max-w-md">
+        {/* Card */}
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-          {/* Logo Section */}
-          <div className="flex justify-center pt-4 pb-0">
-            <Image
-              src="/acc-insights.png"
-              alt="ACC Insights"
-              width={280}
-              height={120}
-              className="block mt-4 mb-4"
-              priority
-            />
-          </div>
+  {/* Logo Section - no vertical padding */}
+  <div className="flex justify-center pt-4 pb-0">
+  <Image
+    src="/acc-insights.png"
+    alt="ACC Insights"
+    width={280}      // smaller width
+    height={120}     // maintains 640:427 aspect ratio
+    className="block mt-4 mb-4"
+    priority
+  />
+</div>
 
-          {/* Title */}
-          <div className="text-center px-6">
-            <h4 className="text-[25px] font-semibold text-gray-900 mt-0">
-              Anti-Corruption Commission
-            </h4>
-            <p className="text-gray-500 text-sm mt-1">
-              Sign in to your account
-            </p>
-          </div>
+  {/* Title - no top margin */}
+  <div className="text-center px-6">
+    <h4 className="text-[25px] font-semibold text-gray-900 mt-0">
+  Anti-Corruption Commission
+</h4>
+    <p className="text-gray-500 text-sm mt-1">
+      Sign in to your account
+    </p>
+  </div>
+  {/* rest of your form, etc. */}
 
           {/* Session expired alert */}
           {expired === "true" && (

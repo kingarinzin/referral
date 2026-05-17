@@ -18,7 +18,7 @@ export async function DELETE(req: Request) {
     }
 
     const client = await clientPromise;
-    const db = client.db("civic_leave_db");
+    const db = client.db("referral_db");
 
     // Check if user exists
     const user = await db.collection("users").findOne({ _id: new ObjectId(userId) });

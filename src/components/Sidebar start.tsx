@@ -192,14 +192,6 @@ export default function Sidebar() {
 
             {displayedOpenSection === "master" && (
               <div className="ml-8 mt-1 space-y-1">
-                 <button
-                  onClick={() => router.push("/admin/agencies")}
-                  className={navSubButtonClass(
-                    pathname === "/admin/agencies",
-                  )}
-                >
-                  Agency
-                </button>
                 <button
                   onClick={() => router.push("/admin/department")}
                   className={navSubButtonClass(
