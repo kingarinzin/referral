@@ -3,6 +3,7 @@ import clientPromise from "@/lib/mongodb";
 import { unlink } from "fs/promises";
 import path from "path";
 import { existsSync } from "fs";
+import { NextRequest, NextResponse } from "next/server";
 
 const UPLOAD_DIR = "uploads/acc-raa-referral";
 
@@ -14,12 +15,15 @@ async function getCollection() {
 }
 
 // ---------------- POST (Delete File) ----------------
-export async function POST(req) {
+export async function POST(req: NextRequest) {
   try {
     const { referralId, fileName } = await req.json();
     
     if (!referralId || !fileName) {
-      return new Response(JSON.stringify({ error: "Referral ID and file name are required" }), { status: 400 });
+      return NextResponse.json(
+        { error: "Referral ID and file name are required" },
+        { status: 400 }
+      );
     }
 
     const collection = await getCollection();
@@ -37,12 +41,21 @@ export async function POST(req) {
     );
     
     if (result.modifiedCount === 0) {
-      return new Response(JSON.stringify({ error: "File not found in record" }), { status: 404 });
+      return NextResponse.json(
+        { error: "File not found in record" },
+        { status: 404 }
+      );
     }
     
-    return new Response(JSON.stringify({ message: "File deleted successfully" }), { status: 200 });
-  } catch (error) {
+    return NextResponse.json(
+      { message: "File deleted successfully" },
+      { status: 200 }
+    );
+  } catch (error: any) {
     console.error("Error in delete-file:", error);
-    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+    return NextResponse.json(
+      { error: error.message || "Internal server error" },
+      { status: 500 }
+    );
   }
 }
