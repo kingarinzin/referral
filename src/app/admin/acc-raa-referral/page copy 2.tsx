@@ -239,25 +239,10 @@ export default function AddReferralPage() {
       (ref.alleged?.toLowerCase() || "").includes(search.toLowerCase())
   );
 
-  // FIXED: Type-safe sorting with undefined handling
   const sortedReferrals = [...filteredReferrals].sort((a, b) => {
     if (!sortConfig.key) return 0;
-    const key = sortConfig.key as keyof Referral;
-    const aVal = a[key];
-    const bVal = b[key];
-    
-    // Handle undefined/null values - put them at the end
-    if (aVal == null && bVal == null) return 0;
-    if (aVal == null) return 1;
-    if (bVal == null) return -1;
-    
-    // For string comparison (case insensitive)
-    if (typeof aVal === 'string' && typeof bVal === 'string') {
-      const comparison = aVal.localeCompare(bVal);
-      return sortConfig.direction === "asc" ? comparison : -comparison;
-    }
-    
-    // For numbers and dates
+    const aVal = a[sortConfig.key];
+    const bVal = b[sortConfig.key];
     if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
     if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
     return 0;
