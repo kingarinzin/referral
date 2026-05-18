@@ -56,22 +56,22 @@ function LoginForm() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-          {/* Logo Section - Tightened spacing */}
-          <div className="flex justify-center pt-2 pb-0">
+          {/* Logo Section */}
+          <div className="flex justify-center pt-4 pb-0">
             <Image
               src="/acc-insights.png"
               alt="ACC Insights"
               width={280}
               height={120}
-              className="block -mb-2"
+              className="block mt-4 mb-4"
               priority
             />
           </div>
 
-          {/* Title - Reduced gap above TRUST word */}
-          <div className="text-center px-6 -mt-2">
-            <h4 className="text-[25px] font-semibold text-gray-900 mt-0 leading-tight">
-              Tripartite Realtime Update Sharing Terminal
+          {/* Title */}
+          <div className="text-center px-6">
+            <h4 className="text-[25px] font-semibold text-gray-900 mt-0">
+              Anti-Corruption Commission
             </h4>
             <p className="text-gray-500 text-sm mt-1">
               Sign in to your account
@@ -87,7 +87,7 @@ function LoginForm() {
           )}
 
           {/* Form */}
-          <form className="flex flex-col gap-5 px-6 pb-6 mt-4" onSubmit={handleSubmit}>
+          <form className="flex flex-col gap-5 px-6 pb-6 mt-6" onSubmit={handleSubmit}>
             <div>
               <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
                 Email address

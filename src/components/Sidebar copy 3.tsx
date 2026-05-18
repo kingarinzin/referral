@@ -30,7 +30,6 @@ function normalizeRole(rawRole?: string): string {
 
   return roleMap[normalized] || "Officer";
 }
-
 export default function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
@@ -39,7 +38,6 @@ export default function Sidebar() {
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState("Officer");
   const [isAdminUser, setIsAdminUser] = useState(false);
-  const [agencyName, setAgencyName] = useState<string>("");
   const [openSection, setOpenSection] = useState<"master" | "leave" | null>(
     null,
   );
@@ -54,9 +52,6 @@ export default function Sidebar() {
       return "";
     }
   };
-
-  // Check if user belongs to Anti-Corruption Commission
-  const isAccAgency = agencyName?.toLowerCase() === "anti-corruption commission";
 
   useEffect(() => {
     async function loadProfile() {
@@ -86,7 +81,6 @@ export default function Sidebar() {
           name?: string;
           email?: string;
           role?: string;
-          agencyId?: string;
         };
 
         const resolvedName = (profile.name || "").trim();
@@ -94,22 +88,7 @@ export default function Sidebar() {
         setUserEmail(profile.email || tokenEmail || "");
         setUserRole(normalizeRole(profile.role));
 
-        // Fetch agency name using agencyId
-        if (profile.agencyId) {
-          try {
-            const agencyRes = await fetch(`/api/agencies/${profile.agencyId}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (agencyRes.ok) {
-              const agencyData = await agencyRes.json();
-              setAgencyName(agencyData.name || "");
-            } else {
-              console.error("Failed to fetch agency");
-            }
-          } catch (agencyErr) {
-            console.error("Error fetching agency:", agencyErr);
-          }
-        }
+
         
       } catch (err) {
         console.error("Profile load error:", err);
@@ -123,7 +102,6 @@ export default function Sidebar() {
     isAdminUser || userRole === "Admin" || pathname.startsWith("/admin/");
   const isMasterActive =
     pathname === "/admin/department" || pathname === "/division";
-  
   const isLeaveActive =
     pathname.startsWith("/dashboard/leave") ||
     pathname === "/admin/leave-type" ||
@@ -141,9 +119,6 @@ export default function Sidebar() {
       "Chairperson",
       "SecretaryService",
     ].includes(userRole);
-
-  // Check if user can access ACC-RAA Referral (Anti-Corruption Commission members)
-  const canAccessAccRaaReferral = isAccAgency;
 
   const displayedOpenSection =
     openSection ||
@@ -174,19 +149,30 @@ export default function Sidebar() {
 
   return (
     <aside className="w-64 bg-white border-r border-gray-200 h-screen fixed top-0 left-0 flex flex-col text-sm">
-      <div className="px-4 py-4 flex items-center gap-3">
-        {/* Avatar */}
-        <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
-          <span className="text-sm font-semibold text-gray-700">
-            {userName ? userName.charAt(0).toUpperCase() : "U"}
-          </span>
-        </div>
+      {/*<div className="p-6 flex justify-center border-b border-gray-200">
+        <Image
+          src="/civicleave-logo.svg"
+          alt="CivicLeave"
+          width={196}
+          height={56}
+          className="h-12 w-auto"
+          priority
+        />
+      </div> */}
 
-        {/* Name */}
-        <p className="text-lg text-gray-700 font-medium truncate">
-          {userName || "User"}
-        </p>
-      </div>
+      <div className="px-4 py-4 flex items-center gap-3">
+          {/* Avatar */}
+          <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center">
+            <span className="text-sm font-semibold text-gray-700">
+              {userName ? userName.charAt(0).toUpperCase() : "U"}
+            </span>
+          </div>
+
+          {/* Name */}
+          <p className="text-lg text-gray-700 font-medium truncate">
+            {userName || "User"}
+          </p>
+        </div>
 
       <nav className="flex-1 px-4 py-3 space-y-2 overflow-y-auto min-h-0">
         {isAdmin ? (
@@ -206,7 +192,7 @@ export default function Sidebar() {
 
             {displayedOpenSection === "master" && (
               <div className="ml-8 mt-1 space-y-1">
-                <button
+                 <button
                   onClick={() => router.push("/admin/agencies")}
                   className={navSubButtonClass(
                     pathname === "/admin/agencies",
@@ -231,8 +217,6 @@ export default function Sidebar() {
               </div>
             )}
 
-            {/* LEAVE MENU - COMMENTED OUT */}
-            {/*
             <button
               onClick={() => toggleSection("leave")}
               className={navButtonClass(isLeaveActive)}
@@ -275,7 +259,7 @@ export default function Sidebar() {
                 >
                   Leave Balance
                 </button>
-                <button
+                 <button
                   onClick={() => router.push("/dashboard/leave/holidays")}
                   className={navSubButtonClass(
                     pathname === "/dashboard/leave/holidays",
@@ -293,26 +277,17 @@ export default function Sidebar() {
                 </button>
               </div>
             )}
-            */}
 
             <button
-              onClick={() => router.push("/admin/acc-raa-referral")}
-              className={navButtonClass(pathname.startsWith("/admin/acc-raa-referral"))}
-            >
-              <Shield size={18} />
-              <span className="flex-1 text-left">Acc-Raa Referral</span>
-            </button>
-
-            <button
-              onClick={() => {
-                console.log("Navigating to /admin/pending-users");
-                router.push("/admin/pending-users");
-              }}
-              className={navButtonClass(pathname === "/admin/pending-users")}
-            >
-              <Clock size={18} />
-              Pending Approvals
-            </button>
+  onClick={() => {
+    console.log("Navigating to /admin/pending-users");
+    router.push("/admin/pending-users");
+  }}
+  className={navButtonClass(pathname === "/admin/pending-users")}
+>
+  <Clock size={18} />
+  Pending Approvals
+</button>
 
             <button
               onClick={() => router.push("/admin/all-users")}
@@ -332,17 +307,54 @@ export default function Sidebar() {
           </>
         ) : (
           <>
-            {/* ACC-RAA Referral for non-admin ACC members */}
-            {canAccessAccRaaReferral && (
-              <button
-                onClick={() => router.push("/admin/acc-raa-referral")}
-                className={navButtonClass(pathname.startsWith("/admin/acc-raa-referral"))}
-              >
-                <Shield size={18} />
-                <span className="flex-1 text-left">Acc-Raa Referral</span>
-              </button>
+            <button
+              onClick={() => toggleSection("leave")}
+              className={navButtonClass(isLeaveActive)}
+            >
+              <Shield size={18} />
+              <span className="flex-1 text-left">Leave</span>
+              {displayedOpenSection === "leave" ? (
+                <ChevronDown size={16} />
+              ) : (
+                <ChevronRight size={16} />
+              )}
+            </button>
+
+            {displayedOpenSection === "leave" && (
+              <div className="ml-8 mt-1 space-y-1">
+                <button
+                  onClick={() => router.push("/dashboard/leave")}
+                  className={navSubButtonClass(
+                    pathname.startsWith("/dashboard/leave") &&
+                      !pathname.startsWith("/dashboard/leave/approvals"),
+                  )}
+                >
+                  Apply Leave
+                </button>
+
+                <button
+                  onClick={() => router.push("/admin/acc-raa-referral")}
+                  className={navSubButtonClass(
+                    pathname.startsWith("/admin/acc-raa-referral") &&
+                      !pathname.startsWith("/admin/acc-raa-referral"),
+                  )}
+                >
+                  Acc-Raa Referral
+                </button>
+
+                {canHandleLeaveApprovals && (
+                  <button
+                    onClick={() => router.push("/dashboard/leave/approvals")}
+                    className={navSubButtonClass(
+                      pathname.startsWith("/dashboard/leave/approvals"),
+                    )}
+                  >
+                    Leave Approvals
+                  </button>
+                )}
+              </div>
             )}
-            
+
             <button
               onClick={() => router.push("/settings")}
               className={navButtonClass(pathname === "/settings")}
@@ -355,14 +367,14 @@ export default function Sidebar() {
       </nav>
 
       <div className="px-4 py-4">
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-4 py-3 rounded-md text-black hover:bg-gray-100"
-        >
-          <LogOut size={18} className="text-red-500" />
-          <span className="text-red-500">Logout</span>
-        </button>
-      </div>
+  <button
+    onClick={handleLogout}
+    className="w-full flex items-center gap-3 px-4 py-3 rounded-md text-black hover:bg-gray-100"
+  >
+    <LogOut size={18} className="text-red-500" />
+    <span className="text-red-500">Logout</span>
+  </button>
+</div>
 
       <div className="px-4 py-4">
         © {new Date().getFullYear()} ANTI-CORRUPTION COMMISSION
