@@ -304,6 +304,16 @@ export default function Sidebar() {
             </button>
 
             <button
+              onClick={() => router.push("/admin/raa-acc-referral")}
+              className={navButtonClass(pathname.startsWith("/admin/raa-acc-referral"))}
+            >
+              <Shield size={18} />
+              <span className="flex-1 text-left">Raa-Acc-Referral</span>
+            </button>
+
+            
+
+            <button
               onClick={() => {
                 console.log("Navigating to /admin/pending-users");
                 router.push("/admin/pending-users");

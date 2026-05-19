@@ -1,0 +1,277 @@
+import { ObjectId } from "mongodb";
+import clientPromise from "@/lib/mongodb";
+import { writeFile, mkdir, copyFile, unlink, access } from "fs/promises";
+import path from "path";
+import { existsSync } from "fs";
+
+const UPLOAD_DIR = "uploads/raa-acc-referral";
+
+// ---------------- HELPER ----------------
+async function getCollection() {
+  const client = await clientPromise;
+  const db = client.db();
+  return db.collection("raa_acc_referrals");
+}
+
+// Ensure upload directory exists
+async function ensureUploadDir() {
+  const uploadPath = path.join(process.cwd(), "public", UPLOAD_DIR);
+  if (!existsSync(uploadPath)) {
+    await mkdir(uploadPath, { recursive: true });
+  }
+  return uploadPath;
+}
+
+// Copy file from source to destination
+async function copyFileWithUniqueName(sourceFileName: string): Promise<string> {
+  const uploadPath = await ensureUploadDir();
+  const sourcePath = path.join(uploadPath, sourceFileName);
+  
+  // Check if source file exists
+  try {
+    await access(sourcePath);
+  } catch {
+    console.error(`Source file not found: ${sourceFileName}`);
+    return sourceFileName; // Return original name if not found
+  }
+  
+  // Generate unique filename
+  const timestamp = Date.now();
+  const randomStr = Math.random().toString(36).substring(7);
+  const ext = path.extname(sourceFileName);
+  const baseName = path.basename(sourceFileName, ext);
+  const newFileName = `${timestamp}-${randomStr}-${baseName}${ext}`;
+  const destPath = path.join(uploadPath, newFileName);
+  
+  // Copy the file
+  await copyFile(sourcePath, destPath);
+  return newFileName;
+}
+
+// Save new files and return filenames
+async function saveFiles(files: File[]): Promise<string[]> {
+  if (!files || files.length === 0) return [];
+  
+  const uploadPath = await ensureUploadDir();
+  const savedFiles: string[] = [];
+  
+  for (const file of files) {
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    
+    // Generate unique filename with timestamp and random string
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(7);
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filename = `${timestamp}-${randomStr}-${safeFileName}`;
+    const filePath = path.join(uploadPath, filename);
+    
+    await writeFile(filePath, buffer);
+    savedFiles.push(filename);
+  }
+  
+  return savedFiles;
+}
+
+// Copy existing attachments from another record
+async function copyExistingAttachments(attachmentNames: string[]): Promise<string[]> {
+  if (!attachmentNames || attachmentNames.length === 0) return [];
+  
+  const copiedFiles: string[] = [];
+  for (const fileName of attachmentNames) {
+    try {
+      const newFileName = await copyFileWithUniqueName(fileName);
+      copiedFiles.push(newFileName);
+    } catch (error) {
+      console.error(`Error copying file ${fileName}:`, error);
+    }
+  }
+  return copiedFiles;
+}
+
+// ---------------- GET ----------------
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const ain = searchParams.get("ain");
+    
+    const collection = await getCollection();
+    let query = {};
+    if (ain) {
+      query = { ain: ain };
+    }
+    
+    const referrals = await collection.find(query).toArray();
+    return new Response(JSON.stringify(referrals), { status: 200 });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
+}
+
+// ---------------- POST ----------------
+export async function POST(req: Request) {
+  try {
+    const formData = await req.formData();
+    const year = formData.get("year");
+    const ain = formData.get("ain");
+    const para_no = formData.get("para_no") || "";
+    const accountability_entity = formData.get("accountability_entity") || "";
+    const audit_report = formData.get("audit_report") || "";
+    const acc_observation = formData.get("acc_observation") || "";
+    const referral_no = formData.get("referral_no") || "";
+    const referral_date = formData.get("referral_date") || null;
+    const attachments = formData.getAll("attachments") as File[];
+    const existingAttachmentsStr = formData.get("existingAttachments");
+    const parent_ain = formData.get("parent_ain") || null;
+
+    if (!year || !ain) {
+      return new Response(JSON.stringify({ error: "Year and AIN are required" }), { status: 400 });
+    }
+
+    // Save new files
+    const newSavedFiles = await saveFiles(attachments);
+    
+    // Copy existing attachments if provided (from duplicate AIN)
+    let copiedFiles: string[] = [];
+    if (existingAttachmentsStr && typeof existingAttachmentsStr === 'string') {
+      try {
+        const existingFiles = JSON.parse(existingAttachmentsStr);
+        if (existingFiles.length > 0) {
+          copiedFiles = await copyExistingAttachments(existingFiles);
+          console.log(`Copied ${copiedFiles.length} files from existing record`);
+        }
+      } catch (e) {
+        console.error("Error parsing existing attachments:", e);
+      }
+    }
+    
+    // Combine copied files and new files
+    const allAttachments = [...copiedFiles, ...newSavedFiles];
+
+    const collection = await getCollection();
+    const doc = { 
+      year, 
+      ain, 
+      para_no, 
+      accountability_entity, 
+      audit_report,
+      acc_observation,
+      referral_no,
+      referral_date, 
+      status: "Pending",
+      attachments: allAttachments,
+      parent_ain: parent_ain,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    
+    const result = await collection.insertOne(doc);
+    const insertedDoc = await collection.findOne({ _id: result.insertedId });
+
+    return new Response(JSON.stringify(insertedDoc), { status: 201 });
+  } catch (error: any) {
+    console.error("Error in POST:", error);
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
+}
+
+// ---------------- PUT ----------------
+export async function PUT(req: Request) {
+  try {
+    const formData = await req.formData();
+    const _id = formData.get("_id");
+    if (!_id) {
+      return new Response(JSON.stringify({ error: "ID is required" }), { status: 400 });
+    }
+
+    const collection = await getCollection();
+    const existingDoc = await collection.findOne({ _id: new ObjectId(_id.toString()) });
+    
+    if (!existingDoc) {
+      return new Response(JSON.stringify({ error: "Document not found" }), { status: 404 });
+    }
+
+    const updateDoc: any = {
+      updatedAt: new Date()
+    };
+    
+    // Update text fields
+    const textFields = ["year", "ain", "para_no", "accountability_entity", "audit_report", "acc_observation", "referral_no", "referral_date"];
+    for (const key of textFields) {
+      const value = formData.get(key);
+      if (value !== null && value !== "") {
+        updateDoc[key] = value;
+      }
+    }
+
+    // Handle attachments
+    const newAttachments = formData.getAll("attachments") as File[];
+    const existingAttachmentsStr = formData.get("existingAttachments");
+    let attachmentsToKeep: string[] = [];
+    
+    if (existingAttachmentsStr && typeof existingAttachmentsStr === 'string') {
+      try {
+        attachmentsToKeep = JSON.parse(existingAttachmentsStr);
+      } catch (e) {
+        attachmentsToKeep = [];
+      }
+    } else if (existingDoc.attachments) {
+      attachmentsToKeep = existingDoc.attachments;
+    }
+    
+    // Save new files
+    const savedNewFiles = await saveFiles(newAttachments);
+    
+    // Combine kept existing files with new files
+    const allAttachments = [...attachmentsToKeep, ...savedNewFiles];
+    updateDoc.attachments = allAttachments;
+
+    await collection.updateOne(
+      { _id: new ObjectId(_id.toString()) }, 
+      { $set: updateDoc }
+    );
+    
+    const updatedDoc = await collection.findOne({ _id: new ObjectId(_id.toString()) });
+
+    return new Response(JSON.stringify(updatedDoc), { status: 200 });
+  } catch (error: any) {
+    console.error("Error in PUT:", error);
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
+}
+
+// ---------------- DELETE ----------------
+export async function DELETE(req: Request) {
+  try {
+    const body = await req.json();
+    const _id = body._id;
+    if (!_id) {
+      return new Response(JSON.stringify({ error: "ID is required" }), { status: 400 });
+    }
+
+    const collection = await getCollection();
+    const doc = await collection.findOne({ _id: new ObjectId(_id) });
+    
+    // Delete associated files from uploads folder
+    if (doc && doc.attachments && doc.attachments.length > 0) {
+      const uploadPath = path.join(process.cwd(), "public", UPLOAD_DIR);
+      for (const filename of doc.attachments) {
+        try {
+          const filePath = path.join(uploadPath, filename);
+          if (existsSync(filePath)) {
+            await unlink(filePath);
+          }
+        } catch (err) {
+          console.error(`Error deleting file ${filename}:`, err);
+        }
+      }
+    }
+    
+    const result = await collection.deleteOne({ _id: new ObjectId(_id) });
+
+    return new Response(JSON.stringify({ deletedCount: result.deletedCount }), { status: 200 });
+  } catch (error: any) {
+    console.error("Error in DELETE:", error);
+    return new Response(JSON.stringify({ error: error.message }), { status: 500 });
+  }
+}
