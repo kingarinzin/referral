@@ -20,17 +20,6 @@ type AccusedDetail = {
   counts: number;
 };
 
-type Meeting = {
-  _id?: string;
-  date: string;
-  type: string;
-  agenda: string;
-  participants: string;
-  minutes: string;
-  attachments: string[];
-  newFiles?: File[];
-};
-
 type Case = {
   _id: string;
   caseNo: string;
@@ -40,7 +29,6 @@ type Case = {
   investigatorContact: string;
   attachments: string[];
   accusedDetails: AccusedDetail[];
-  meetings: Meeting[];
   status: string;
   remarks: string;
   createdAt: string;
@@ -72,35 +60,8 @@ export default function AccOagReferralPage() {
     remarks: "",
   });
   const [accusedDetails, setAccusedDetails] = useState<AccusedDetail[]>([]);
-  const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [attachments, setAttachments] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<string[]>([]);
-
-  // Accused modal state
-  const [showAccusedModal, setShowAccusedModal] = useState(false);
-  const [editingAccusedIndex, setEditingAccusedIndex] = useState<number | null>(null);
-  const [accusedFormData, setAccusedFormData] = useState<AccusedDetail>({
-    name: "",
-    cid: "",
-    actId: "",
-    sectionId: "",
-    chargeId: "",
-    prayer: "",
-    counts: 1,
-  });
-
-  // Meeting modal state
-  const [showMeetingModal, setShowMeetingModal] = useState(false);
-  const [editingMeetingIndex, setEditingMeetingIndex] = useState<number | null>(null);
-  const [meetingFormData, setMeetingFormData] = useState<Meeting>({
-    date: "",
-    type: "",
-    agenda: "",
-    participants: "",
-    minutes: "",
-    attachments: [],
-    newFiles: [],
-  });
 
   // Master data
   const [acts, setActs] = useState<Act[]>([]);
@@ -163,10 +124,9 @@ export default function AccOagReferralPage() {
     fetchActs();
   }, []);
 
-  // ----- Accused modal handlers -----
-  const openAddAccusedModal = () => {
-    setEditingAccusedIndex(null);
-    setAccusedFormData({
+  // ----- Accused row handlers -----
+  const addAccusedRow = () => {
+    const newRow: AccusedDetail = {
       name: "",
       cid: "",
       actId: "",
@@ -174,155 +134,33 @@ export default function AccOagReferralPage() {
       chargeId: "",
       prayer: "",
       counts: 1,
-    });
-    setShowAccusedModal(true);
+    };
+    setAccusedDetails([...accusedDetails, newRow]);
   };
 
-  const openEditAccusedModal = (index: number) => {
-    const accused = accusedDetails[index];
-    setEditingAccusedIndex(index);
-    setAccusedFormData({
-      ...accused,
-      actId: getId(accused.actId),
-      sectionId: getId(accused.sectionId),
-      chargeId: getId(accused.chargeId),
-    });
-    const actId = getId(accused.actId);
-    const sectionId = getId(accused.sectionId);
-    if (actId) fetchSectionsForAct(actId);
-    if (sectionId) fetchChargesForSection(sectionId);
-    setShowAccusedModal(true);
+  const removeAccusedRow = (index: number) => {
+    const updated = [...accusedDetails];
+    updated.splice(index, 1);
+    setAccusedDetails(updated);
   };
 
-  const saveAccused = () => {
-    if (!accusedFormData.name || !accusedFormData.cid || !accusedFormData.actId || !accusedFormData.sectionId || !accusedFormData.chargeId) {
-      showNotification("Please fill all required fields (Name, CID, Act, Section, Charge)", "error");
-      return;
-    }
-    if (editingAccusedIndex !== null) {
-      const updated = [...accusedDetails];
-      updated[editingAccusedIndex] = { ...accusedFormData };
-      setAccusedDetails(updated);
-      showNotification("Accused updated", "success");
-    } else {
-      setAccusedDetails([...accusedDetails, { ...accusedFormData }]);
-      showNotification("Accused added", "success");
-    }
-    setShowAccusedModal(false);
-  };
+  const updateAccusedField = (index: number, field: keyof AccusedDetail, value: any) => {
+    const updated = [...accusedDetails];
+    updated[index] = { ...updated[index], [field]: value };
+    setAccusedDetails(updated);
 
-  const deleteAccused = (index: number) => {
-    if (confirm("Remove this accused?")) {
-      const updated = [...accusedDetails];
-      updated.splice(index, 1);
-      setAccusedDetails(updated);
-    }
-  };
-
-  const handleAccusedFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setAccusedFormData(prev => ({ ...prev, [name]: value }));
-    if (name === "actId") {
-      setAccusedFormData(prev => ({ ...prev, sectionId: "", chargeId: "" }));
+    if (field === "actId") {
+      updated[index].sectionId = "";
+      updated[index].chargeId = "";
       fetchSectionsForAct(value);
     }
-    if (name === "sectionId") {
-      setAccusedFormData(prev => ({ ...prev, chargeId: "" }));
+    if (field === "sectionId") {
+      updated[index].chargeId = "";
       fetchChargesForSection(value);
     }
   };
 
-  // ----- Meeting modal handlers -----
-  const openAddMeetingModal = () => {
-    setEditingMeetingIndex(null);
-    setMeetingFormData({
-      date: "",
-      type: "",
-      agenda: "",
-      participants: "",
-      minutes: "",
-      attachments: [],
-      newFiles: [],
-    });
-    setShowMeetingModal(true);
-  };
-
-  const openEditMeetingModal = (index: number) => {
-    const meeting = meetings[index];
-    setEditingMeetingIndex(index);
-    setMeetingFormData({
-      ...meeting,
-      date: meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : "",
-      newFiles: [],
-    });
-    setShowMeetingModal(true);
-  };
-
-  const handleMeetingFormChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setMeetingFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleMeetingFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length) {
-      setMeetingFormData(prev => ({
-        ...prev,
-        newFiles: [...(prev.newFiles || []), ...files],
-      }));
-    }
-    e.target.value = "";
-  };
-
-  const removeMeetingNewFile = (index: number) => {
-    setMeetingFormData(prev => ({
-      ...prev,
-      newFiles: prev.newFiles?.filter((_, i) => i !== index) || [],
-    }));
-  };
-
-  const removeMeetingExistingFile = (fileName: string) => {
-    setMeetingFormData(prev => ({
-      ...prev,
-      attachments: prev.attachments.filter(f => f !== fileName),
-    }));
-  };
-
-  const saveMeeting = () => {
-    if (!meetingFormData.date || !meetingFormData.type) {
-      showNotification("Date and Type are required", "error");
-      return;
-    }
-    const meetingToSave: Meeting = {
-      date: meetingFormData.date,
-      type: meetingFormData.type,
-      agenda: meetingFormData.agenda,
-      participants: meetingFormData.participants,
-      minutes: meetingFormData.minutes,
-      attachments: meetingFormData.attachments,
-      newFiles: meetingFormData.newFiles,
-    };
-    if (editingMeetingIndex !== null) {
-      const updated = [...meetings];
-      updated[editingMeetingIndex] = meetingToSave;
-      setMeetings(updated);
-      showNotification("Meeting updated", "success");
-    } else {
-      setMeetings([...meetings, meetingToSave]);
-      showNotification("Meeting added", "success");
-    }
-    setShowMeetingModal(false);
-  };
-
-  const deleteMeeting = (index: number) => {
-    if (confirm("Remove this meeting?")) {
-      const updated = [...meetings];
-      updated.splice(index, 1);
-      setMeetings(updated);
-    }
-  };
-
-  // ----- File handlers (case attachments) -----
+  // ----- File handlers (matching raa-acc-referral) -----
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length) {
@@ -366,7 +204,9 @@ export default function AccOagReferralPage() {
   };
 
   // ----- Form handlers -----
-  const handleFormChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleFormChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
@@ -382,7 +222,6 @@ export default function AccOagReferralPage() {
       remarks: "",
     });
     setAccusedDetails([]);
-    setMeetings([]);
     setAttachments([]);
     setExistingAttachments([]);
   };
@@ -401,12 +240,6 @@ export default function AccOagReferralPage() {
       chargeId: getId(acc.chargeId),
     }));
 
-    // Prepare meetings data: keep existing attachments and newFiles
-    const meetingsForApi = meetings.map((meeting, idx) => ({
-      ...meeting,
-      newFiles: undefined, // we will send files separately
-    }));
-
     const form = new FormData();
     form.append("caseNo", formData.caseNo);
     form.append("caseDescription", formData.caseDescription);
@@ -415,24 +248,13 @@ export default function AccOagReferralPage() {
     form.append("investigatorContact", formData.investigatorContact);
     form.append("remarks", formData.remarks);
     form.append("accusedDetails", JSON.stringify(accusedForApi));
-    form.append("meetings", JSON.stringify(meetingsForApi));
-
-    // Case attachments
-    attachments.forEach((file) => form.append("attachments", file));
-
-    // Meeting attachments
-    meetings.forEach((meeting, meetingIdx) => {
-      if (meeting.newFiles && meeting.newFiles.length) {
-        meeting.newFiles.forEach((file) => {
-          form.append(`meeting_attachments_${meetingIdx}`, file);
-        });
-      }
-    });
 
     if (editData) {
       form.append("_id", editData._id);
       form.append("existingAttachments", JSON.stringify(existingAttachments));
     }
+
+    attachments.forEach((file) => form.append("attachments", file));
 
     try {
       const url = "/api/acc-oag-referral";
@@ -465,11 +287,6 @@ export default function AccOagReferralPage() {
       chargeId: getId(ad.chargeId),
     }));
     setAccusedDetails(accused);
-    const meetingsWithFiles = (caseItem.meetings || []).map(m => ({
-      ...m,
-      newFiles: [],
-    }));
-    setMeetings(meetingsWithFiles);
     setExistingAttachments(caseItem.attachments);
     setAttachments([]);
 
@@ -534,10 +351,6 @@ export default function AccOagReferralPage() {
 
   const totalAttachmentsCount = existingAttachments.length + attachments.length;
 
-  const meetingAttachmentsCount = (meeting: Meeting) => {
-    return (meeting.attachments?.length || 0) + (meeting.newFiles?.length || 0);
-  };
-
   return (
     <>
       <div className="flex">
@@ -577,6 +390,7 @@ export default function AccOagReferralPage() {
                 </button>
               </div>
 
+              {/* Basic Info */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Case No. *</label>
@@ -639,7 +453,7 @@ export default function AccOagReferralPage() {
                 </div>
               </div>
 
-              {/* Attachments Section */}
+              {/* Attachments Section (matching raa-acc-referral) */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -654,6 +468,7 @@ export default function AccOagReferralPage() {
                   )}
                 </div>
 
+                {/* Existing attachments */}
                 {existingAttachments.length > 0 && (
                   <div className="space-y-2 mt-3">
                     <label className="text-xs font-medium text-gray-500">Existing Files:</label>
@@ -690,6 +505,7 @@ export default function AccOagReferralPage() {
                   </div>
                 )}
 
+                {/* New attachments */}
                 {attachments.length > 0 && (
                   <div className="space-y-2 mt-3">
                     <label className="text-xs font-medium text-gray-500">New Files to Add:</label>
@@ -711,6 +527,7 @@ export default function AccOagReferralPage() {
                   </div>
                 )}
 
+                {/* Summary */}
                 {totalAttachmentsCount > 0 && (
                   <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
                     <p className="text-sm font-medium text-gray-700">Summary:</p>
@@ -731,129 +548,121 @@ export default function AccOagReferralPage() {
                   <h3 className="font-semibold">Accused Details</h3>
                   <button
                     type="button"
-                    onClick={openAddAccusedModal}
+                    onClick={addAccusedRow}
                     className="flex items-center gap-1 text-xs border rounded px-2 py-1 hover:border-black"
                   >
                     <Plus size={12} /> Add Accused
                   </button>
                 </div>
-                {accusedDetails.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 border rounded-lg">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Name</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">CID</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Act</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Section</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Charge</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Counts</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Prayer</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 bg-white">
-                        {accusedDetails.map((acc, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 text-sm">{acc.name}</td>
-                            <td className="px-4 py-2 text-sm">{acc.cid}</td>
-                            <td className="px-4 py-2 text-sm">{getActName(acc.actId)}</td>
-                            <td className="px-4 py-2 text-sm">{getSectionName(acc.sectionId)}</td>
-                            <td className="px-4 py-2 text-sm">{getChargeName(acc.chargeId)}</td>
-                            <td className="px-4 py-2 text-sm">{acc.counts}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">
-                              {acc.prayer.length > 30 ? acc.prayer.substring(0, 30) + "..." : acc.prayer}
-                            </td>
-                            <td className="px-4 py-2 text-sm flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => openEditAccusedModal(idx)}
-                                className="text-blue-500 hover:text-blue-700"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteAccused(idx)}
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                {accusedDetails.map((acc, idx) => (
+                  <div key={idx} className="border rounded-lg p-4 mb-4 bg-gray-50 relative">
+                    <button
+                      type="button"
+                      onClick={() => removeAccusedRow(idx)}
+                      className="absolute top-2 right-2 text-red-500"
+                    >
+                      <X size={16} />
+                    </button>
+                    <div className="grid md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-medium">Name *</label>
+                        <input
+                          value={acc.name}
+                          onChange={(e) => updateAccusedField(idx, "name", e.target.value)}
+                          className="w-full border rounded px-2 py-1 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">CID *</label>
+                        <input
+                          value={acc.cid}
+                          onChange={(e) => updateAccusedField(idx, "cid", e.target.value)}
+                          className="w-full border rounded px-2 py-1 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Act *</label>
+                        <select
+                          value={getId(acc.actId)}
+                          onChange={(e) => updateAccusedField(idx, "actId", e.target.value)}
+                          className="w-full border rounded px-2 py-1 text-sm"
+                        >
+                          <option value="">Select Act</option>
+                          {acts.map((act) => (
+                            <option key={act._id} value={act._id}>
+                              {act.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Section *</label>
+                        <select
+                          value={getId(acc.sectionId)}
+                          onChange={(e) => updateAccusedField(idx, "sectionId", e.target.value)}
+                          disabled={!getId(acc.actId)}
+                          className="w-full border rounded px-2 py-1 text-sm"
+                        >
+                          <option value="">Select Section</option>
+                          {sections[getId(acc.actId)]?.map((sec) => (
+                            <option key={sec._id} value={sec._id}>
+                              {sec.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Charge *</label>
+                        <select
+                          value={getId(acc.chargeId)}
+                          onChange={(e) => updateAccusedField(idx, "chargeId", e.target.value)}
+                          disabled={!getId(acc.sectionId)}
+                          className="w-full border rounded px-2 py-1 text-sm"
+                        >
+                          <option value="">Select Charge</option>
+                          {charges[getId(acc.sectionId)]?.map((ch) => (
+                            <option key={ch._id} value={ch._id}>
+                              {ch.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-medium">Counts</label>
+                        <input
+                          type="number"
+                          value={acc.counts}
+                          onChange={(e) => updateAccusedField(idx, "counts", parseInt(e.target.value) || 1)}
+                          className="w-full border rounded px-2 py-1 text-sm"
+                        />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="text-xs font-medium">Prayer</label>
+                        <div className="flex items-start gap-2">
+                          <textarea
+                            value={acc.prayer}
+                            onChange={(e) => updateAccusedField(idx, "prayer", e.target.value)}
+                            rows={2}
+                            className="flex-1 border rounded px-2 py-1 text-sm"
+                          />
+                          {acc.prayer && acc.prayer.length > 80 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setSelectedView({ title: "Prayer", data: acc.prayer })
+                              }
+                              className="text-blue-500 hover:text-blue-700 mt-1"
+                            >
+                              <Maximize2 size={14} />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                ) : (
+                ))}
+                {accusedDetails.length === 0 && (
                   <p className="text-gray-400 text-sm">No accused added. Click "Add Accused".</p>
-                )}
-              </div>
-
-              {/* Meetings Section */}
-              <div className="border-t pt-4">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="font-semibold">Meetings</h3>
-                  <button
-                    type="button"
-                    onClick={openAddMeetingModal}
-                    className="flex items-center gap-1 text-xs border rounded px-2 py-1 hover:border-black"
-                  >
-                    <Plus size={12} /> Add Meeting
-                  </button>
-                </div>
-                {meetings.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 border rounded-lg">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Date</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Type</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Agenda</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Participants</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Minutes</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Attachments</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-200 bg-white">
-                        {meetings.map((meeting, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 text-sm">{new Date(meeting.date).toLocaleDateString()}</td>
-                            <td className="px-4 py-2 text-sm">{meeting.type}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{meeting.agenda}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{meeting.participants}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{meeting.minutes}</td>
-                            <td className="px-4 py-2 text-sm">
-                              {meetingAttachmentsCount(meeting) > 0 ? (
-                                <span className="text-xs text-blue-600">{meetingAttachmentsCount(meeting)} file(s)</span>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-2 text-sm flex gap-2">
-                              <button
-                                type="button"
-                                onClick={() => openEditMeetingModal(idx)}
-                                className="text-blue-500 hover:text-blue-700"
-                              >
-                                <Pencil size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => deleteMeeting(idx)}
-                                className="text-red-500 hover:text-red-700"
-                              >
-                                <Trash2 size={14} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <p className="text-gray-400 text-sm">No meetings added. Click "Add Meeting".</p>
                 )}
               </div>
 
@@ -905,7 +714,7 @@ export default function AccOagReferralPage() {
             </div>
           </div>
 
-          {/* Cases List Table */}
+          {/* List Table */}
           <div className="bg-white shadow rounded-lg overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -915,7 +724,6 @@ export default function AccOagReferralPage() {
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase">Description</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase">Investigator</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase">Accused</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Meetings</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase">Attachments</th>
                   <th className="px-6 py-3 text-left text-xs font-medium uppercase">Actions</th>
@@ -941,7 +749,6 @@ export default function AccOagReferralPage() {
                     </td>
                     <td className="px-6 py-3 text-sm">{c.investigatorName}</td>
                     <td className="px-6 py-3 text-sm">{c.accusedDetails?.length || 0}</td>
-                    <td className="px-6 py-3 text-sm">{c.meetings?.length || 0}</td>
                     <td className="px-6 py-3 text-sm">
                       <span
                         className={`px-2 py-1 rounded text-xs ${
@@ -998,7 +805,7 @@ export default function AccOagReferralPage() {
                 ))}
                 {paginated.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="text-center py-6 text-gray-500">
+                    <td colSpan={8} className="text-center py-6 text-gray-500">
                       No cases found
                     </td>
                   </tr>
@@ -1057,265 +864,6 @@ export default function AccOagReferralPage() {
                 className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700"
               >
                 Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal for Add/Edit Accused */}
-      {showAccusedModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ animation: "fadeIn 0.2s ease-out" }}
-        >
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-md" onClick={() => setShowAccusedModal(false)} />
-          <div
-            className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col"
-            style={{ animation: "zoomIn 0.2s ease-out" }}
-          >
-            <div className="flex justify-between items-center p-6 border-b">
-              <h3 className="text-xl font-semibold">
-                {editingAccusedIndex !== null ? "Edit Accused" : "Add Accused"}
-              </h3>
-              <button onClick={() => setShowAccusedModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={24} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Name *</label>
-                  <input
-                    name="name"
-                    value={accusedFormData.name}
-                    onChange={handleAccusedFormChange}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">CID *</label>
-                  <input
-                    name="cid"
-                    value={accusedFormData.cid}
-                    onChange={handleAccusedFormChange}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Act *</label>
-                  <select
-                    name="actId"
-                    value={getId(accusedFormData.actId)}
-                    onChange={handleAccusedFormChange}
-                    className="w-full border rounded px-3 py-2"
-                  >
-                    <option value="">Select Act</option>
-                    {acts.map((act) => (
-                      <option key={act._id} value={act._id}>{act.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Section *</label>
-                  <select
-                    name="sectionId"
-                    value={getId(accusedFormData.sectionId)}
-                    onChange={handleAccusedFormChange}
-                    disabled={!getId(accusedFormData.actId)}
-                    className="w-full border rounded px-3 py-2"
-                  >
-                    <option value="">Select Section</option>
-                    {sections[getId(accusedFormData.actId)]?.map((sec) => (
-                      <option key={sec._id} value={sec._id}>{sec.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Charge *</label>
-                  <select
-                    name="chargeId"
-                    value={getId(accusedFormData.chargeId)}
-                    onChange={handleAccusedFormChange}
-                    disabled={!getId(accusedFormData.sectionId)}
-                    className="w-full border rounded px-3 py-2"
-                  >
-                    <option value="">Select Charge</option>
-                    {charges[getId(accusedFormData.sectionId)]?.map((ch) => (
-                      <option key={ch._id} value={ch._id}>{ch.name}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Counts</label>
-                  <input
-                    type="number"
-                    name="counts"
-                    value={accusedFormData.counts}
-                    onChange={handleAccusedFormChange}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Prayer</label>
-                  <textarea
-                    name="prayer"
-                    value={accusedFormData.prayer}
-                    onChange={handleAccusedFormChange}
-                    rows={3}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-xl">
-              <button
-                onClick={() => setShowAccusedModal(false)}
-                className="px-4 py-2 border rounded-md text-sm hover:border-black"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveAccused}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
-              >
-                {editingAccusedIndex !== null ? "Update" : "Add"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal for Add/Edit Meeting */}
-      {showMeetingModal && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ animation: "fadeIn 0.2s ease-out" }}
-        >
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-md" onClick={() => setShowMeetingModal(false)} />
-          <div
-            className="relative bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col"
-            style={{ animation: "zoomIn 0.2s ease-out" }}
-          >
-            <div className="flex justify-between items-center p-6 border-b">
-              <h3 className="text-xl font-semibold">
-                {editingMeetingIndex !== null ? "Edit Meeting" : "Add Meeting"}
-              </h3>
-              <button onClick={() => setShowMeetingModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={24} />
-              </button>
-            </div>
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="grid md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm font-medium">Case No. (auto)</label>
-                  <input
-                    type="text"
-                    value={formData.caseNo}
-                    readOnly
-                    className="w-full border rounded px-3 py-2 bg-gray-100"
-                  />
-                </div>
-                <div>
-                  <label className="text-sm font-medium">Date *</label>
-                  <input
-                    type="date"
-                    name="date"
-                    value={meetingFormData.date}
-                    onChange={handleMeetingFormChange}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Type *</label>
-                  <input
-                    name="type"
-                    value={meetingFormData.type}
-                    onChange={handleMeetingFormChange}
-                    placeholder="e.g., Bilateral, Coordination, Review"
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Agenda</label>
-                  <textarea
-                    name="agenda"
-                    value={meetingFormData.agenda}
-                    onChange={handleMeetingFormChange}
-                    rows={2}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Participants</label>
-                  <textarea
-                    name="participants"
-                    value={meetingFormData.participants}
-                    onChange={handleMeetingFormChange}
-                    rows={2}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Minutes / Decisions</label>
-                  <textarea
-                    name="minutes"
-                    value={meetingFormData.minutes}
-                    onChange={handleMeetingFormChange}
-                    rows={3}
-                    className="w-full border rounded px-3 py-2"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Attachments</label>
-                  <div className="flex items-center gap-2">
-                    <label className="cursor-pointer text-blue-600 hover:text-blue-800">
-                      <Upload size={16} />
-                      <input type="file" multiple onChange={handleMeetingFileSelect} className="hidden" />
-                    </label>
-                    <span className="text-xs text-gray-500">Upload relevant files for this meeting</span>
-                  </div>
-                  {meetingFormData.attachments.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs font-medium text-gray-600">Existing files:</p>
-                      {meetingFormData.attachments.map((fileName, i) => (
-                        <div key={i} className="flex justify-between items-center bg-blue-50 p-1 rounded">
-                          <span className="text-xs truncate">{fileName}</span>
-                          <button onClick={() => removeMeetingExistingFile(fileName)} className="text-red-500">
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {meetingFormData.newFiles && meetingFormData.newFiles.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs font-medium text-gray-600">New files:</p>
-                      {meetingFormData.newFiles.map((file, i) => (
-                        <div key={i} className="flex justify-between items-center bg-green-50 p-1 rounded">
-                          <span className="text-xs truncate">{file.name}</span>
-                          <button onClick={() => removeMeetingNewFile(i)} className="text-red-500">
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-xl">
-              <button
-                onClick={() => setShowMeetingModal(false)}
-                className="px-4 py-2 border rounded-md text-sm hover:border-black"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveMeeting}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700"
-              >
-                {editingMeetingIndex !== null ? "Update" : "Add"}
               </button>
             </div>
           </div>

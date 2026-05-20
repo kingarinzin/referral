@@ -27,8 +27,6 @@ type Meeting = {
   agenda: string;
   participants: string;
   minutes: string;
-  attachments: string[];
-  newFiles?: File[];
 };
 
 type Case = {
@@ -98,8 +96,6 @@ export default function AccOagReferralPage() {
     agenda: "",
     participants: "",
     minutes: "",
-    attachments: [],
-    newFiles: [],
   });
 
   // Master data
@@ -241,8 +237,6 @@ export default function AccOagReferralPage() {
       agenda: "",
       participants: "",
       minutes: "",
-      attachments: [],
-      newFiles: [],
     });
     setShowMeetingModal(true);
   };
@@ -250,42 +244,10 @@ export default function AccOagReferralPage() {
   const openEditMeetingModal = (index: number) => {
     const meeting = meetings[index];
     setEditingMeetingIndex(index);
-    setMeetingFormData({
-      ...meeting,
-      date: meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : "",
-      newFiles: [],
-    });
+    // Format date for input
+    const formattedDate = meeting.date ? new Date(meeting.date).toISOString().split('T')[0] : "";
+    setMeetingFormData({ ...meeting, date: formattedDate });
     setShowMeetingModal(true);
-  };
-
-  const handleMeetingFormChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setMeetingFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  const handleMeetingFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    if (files.length) {
-      setMeetingFormData(prev => ({
-        ...prev,
-        newFiles: [...(prev.newFiles || []), ...files],
-      }));
-    }
-    e.target.value = "";
-  };
-
-  const removeMeetingNewFile = (index: number) => {
-    setMeetingFormData(prev => ({
-      ...prev,
-      newFiles: prev.newFiles?.filter((_, i) => i !== index) || [],
-    }));
-  };
-
-  const removeMeetingExistingFile = (fileName: string) => {
-    setMeetingFormData(prev => ({
-      ...prev,
-      attachments: prev.attachments.filter(f => f !== fileName),
-    }));
   };
 
   const saveMeeting = () => {
@@ -293,22 +255,13 @@ export default function AccOagReferralPage() {
       showNotification("Date and Type are required", "error");
       return;
     }
-    const meetingToSave: Meeting = {
-      date: meetingFormData.date,
-      type: meetingFormData.type,
-      agenda: meetingFormData.agenda,
-      participants: meetingFormData.participants,
-      minutes: meetingFormData.minutes,
-      attachments: meetingFormData.attachments,
-      newFiles: meetingFormData.newFiles,
-    };
     if (editingMeetingIndex !== null) {
       const updated = [...meetings];
-      updated[editingMeetingIndex] = meetingToSave;
+      updated[editingMeetingIndex] = { ...meetingFormData };
       setMeetings(updated);
       showNotification("Meeting updated", "success");
     } else {
-      setMeetings([...meetings, meetingToSave]);
+      setMeetings([...meetings, { ...meetingFormData }]);
       showNotification("Meeting added", "success");
     }
     setShowMeetingModal(false);
@@ -322,7 +275,12 @@ export default function AccOagReferralPage() {
     }
   };
 
-  // ----- File handlers (case attachments) -----
+  const handleMeetingFormChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setMeetingFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  // ----- File handlers -----
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length) {
@@ -401,12 +359,6 @@ export default function AccOagReferralPage() {
       chargeId: getId(acc.chargeId),
     }));
 
-    // Prepare meetings data: keep existing attachments and newFiles
-    const meetingsForApi = meetings.map((meeting, idx) => ({
-      ...meeting,
-      newFiles: undefined, // we will send files separately
-    }));
-
     const form = new FormData();
     form.append("caseNo", formData.caseNo);
     form.append("caseDescription", formData.caseDescription);
@@ -415,24 +367,14 @@ export default function AccOagReferralPage() {
     form.append("investigatorContact", formData.investigatorContact);
     form.append("remarks", formData.remarks);
     form.append("accusedDetails", JSON.stringify(accusedForApi));
-    form.append("meetings", JSON.stringify(meetingsForApi));
-
-    // Case attachments
-    attachments.forEach((file) => form.append("attachments", file));
-
-    // Meeting attachments
-    meetings.forEach((meeting, meetingIdx) => {
-      if (meeting.newFiles && meeting.newFiles.length) {
-        meeting.newFiles.forEach((file) => {
-          form.append(`meeting_attachments_${meetingIdx}`, file);
-        });
-      }
-    });
+    form.append("meetings", JSON.stringify(meetings));
 
     if (editData) {
       form.append("_id", editData._id);
       form.append("existingAttachments", JSON.stringify(existingAttachments));
     }
+
+    attachments.forEach((file) => form.append("attachments", file));
 
     try {
       const url = "/api/acc-oag-referral";
@@ -465,11 +407,7 @@ export default function AccOagReferralPage() {
       chargeId: getId(ad.chargeId),
     }));
     setAccusedDetails(accused);
-    const meetingsWithFiles = (caseItem.meetings || []).map(m => ({
-      ...m,
-      newFiles: [],
-    }));
-    setMeetings(meetingsWithFiles);
+    setMeetings(caseItem.meetings || []);
     setExistingAttachments(caseItem.attachments);
     setAttachments([]);
 
@@ -534,10 +472,6 @@ export default function AccOagReferralPage() {
 
   const totalAttachmentsCount = existingAttachments.length + attachments.length;
 
-  const meetingAttachmentsCount = (meeting: Meeting) => {
-    return (meeting.attachments?.length || 0) + (meeting.newFiles?.length || 0);
-  };
-
   return (
     <>
       <div className="flex">
@@ -577,6 +511,7 @@ export default function AccOagReferralPage() {
                 </button>
               </div>
 
+              {/* Basic Info */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium">Case No. *</label>
@@ -812,7 +747,6 @@ export default function AccOagReferralPage() {
                           <th className="px-4 py-2 text-left text-xs font-medium uppercase">Agenda</th>
                           <th className="px-4 py-2 text-left text-xs font-medium uppercase">Participants</th>
                           <th className="px-4 py-2 text-left text-xs font-medium uppercase">Minutes</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Attachments</th>
                           <th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th>
                         </tr>
                       </thead>
@@ -824,13 +758,6 @@ export default function AccOagReferralPage() {
                             <td className="px-4 py-2 text-sm max-w-xs truncate">{meeting.agenda}</td>
                             <td className="px-4 py-2 text-sm max-w-xs truncate">{meeting.participants}</td>
                             <td className="px-4 py-2 text-sm max-w-xs truncate">{meeting.minutes}</td>
-                            <td className="px-4 py-2 text-sm">
-                              {meetingAttachmentsCount(meeting) > 0 ? (
-                                <span className="text-xs text-blue-600">{meetingAttachmentsCount(meeting)} file(s)</span>
-                              ) : (
-                                <span className="text-gray-400">-</span>
-                              )}
-                            </td>
                             <td className="px-4 py-2 text-sm flex gap-2">
                               <button
                                 type="button"
@@ -905,7 +832,7 @@ export default function AccOagReferralPage() {
             </div>
           </div>
 
-          {/* Cases List Table */}
+          {/* List Table */}
           <div className="bg-white shadow rounded-lg overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -1208,15 +1135,6 @@ export default function AccOagReferralPage() {
             <div className="flex-1 overflow-y-auto p-6">
               <div className="grid md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-sm font-medium">Case No. (auto)</label>
-                  <input
-                    type="text"
-                    value={formData.caseNo}
-                    readOnly
-                    className="w-full border rounded px-3 py-2 bg-gray-100"
-                  />
-                </div>
-                <div>
                   <label className="text-sm font-medium">Date *</label>
                   <input
                     type="date"
@@ -1226,13 +1144,13 @@ export default function AccOagReferralPage() {
                     className="w-full border rounded px-3 py-2"
                   />
                 </div>
-                <div className="md:col-span-2">
+                <div>
                   <label className="text-sm font-medium">Type *</label>
                   <input
                     name="type"
                     value={meetingFormData.type}
                     onChange={handleMeetingFormChange}
-                    placeholder="e.g., Bilateral, Coordination, Review"
+                    placeholder="e.g., Bilateral, Coordination"
                     className="w-full border rounded px-3 py-2"
                   />
                 </div>
@@ -1265,42 +1183,6 @@ export default function AccOagReferralPage() {
                     rows={3}
                     className="w-full border rounded px-3 py-2"
                   />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="text-sm font-medium">Attachments</label>
-                  <div className="flex items-center gap-2">
-                    <label className="cursor-pointer text-blue-600 hover:text-blue-800">
-                      <Upload size={16} />
-                      <input type="file" multiple onChange={handleMeetingFileSelect} className="hidden" />
-                    </label>
-                    <span className="text-xs text-gray-500">Upload relevant files for this meeting</span>
-                  </div>
-                  {meetingFormData.attachments.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs font-medium text-gray-600">Existing files:</p>
-                      {meetingFormData.attachments.map((fileName, i) => (
-                        <div key={i} className="flex justify-between items-center bg-blue-50 p-1 rounded">
-                          <span className="text-xs truncate">{fileName}</span>
-                          <button onClick={() => removeMeetingExistingFile(fileName)} className="text-red-500">
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  {meetingFormData.newFiles && meetingFormData.newFiles.length > 0 && (
-                    <div className="mt-2 space-y-1">
-                      <p className="text-xs font-medium text-gray-600">New files:</p>
-                      {meetingFormData.newFiles.map((file, i) => (
-                        <div key={i} className="flex justify-between items-center bg-green-50 p-1 rounded">
-                          <span className="text-xs truncate">{file.name}</span>
-                          <button onClick={() => removeMeetingNewFile(i)} className="text-red-500">
-                            <X size={14} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

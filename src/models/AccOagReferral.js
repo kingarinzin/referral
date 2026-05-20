@@ -1,5 +1,13 @@
 import mongoose from 'mongoose';
 
+const MeetingSchema = new mongoose.Schema({
+  date: { type: Date, required: true },
+  type: { type: String, required: true },
+  agenda: { type: String, default: '' },
+  participants: { type: String, default: '' },
+  minutes: { type: String, default: '' },
+}, { timestamps: true });
+
 const AccusedDetailSchema = new mongoose.Schema({
   name: { type: String, required: true },
   cid: { type: String, required: true },
@@ -17,9 +25,10 @@ const AccOagReferralSchema = new mongoose.Schema(
     investigatorName: { type: String, required: true },
     investigatorDesignation: { type: String, default: '' },
     investigatorContact: { type: String, default: '' },
-    attachments: [{ type: String }], // filenames stored in uploads/acc-oag-referral/
+    attachments: [{ type: String }],
     accusedDetails: [AccusedDetailSchema],
-    status: { type: String, default: 'Pending' }, // Pending, Under Investigation, Closed
+    meetings: [MeetingSchema],
+    status: { type: String, default: 'Pending' },
     remarks: { type: String, default: '' },
   },
   { timestamps: true }

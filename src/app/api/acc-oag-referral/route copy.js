@@ -6,7 +6,7 @@ import AccOagReferral from '@/models/AccOagReferral';
 // This ensures they are registered with Mongoose
 import Act from '@/models/model'; 
 import Section from '@/models/Section';
-import Charge from '@/models/Charges';
+import Charge from '@/models/Charges';   // Your file is Charges.js
 
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import path from 'path';
@@ -71,7 +71,6 @@ export async function POST(req) {
     const remarks = formData.get('remarks') || '';
     const attachments = formData.getAll('attachments');
     const accusedDetailsRaw = formData.get('accusedDetails');
-    const meetingsRaw = formData.get('meetings');       // ✅ new
 
     if (!caseNo || !caseDescription || !investigatorName) {
       return NextResponse.json({ error: 'Case No, Description, and Investigator are required' }, { status: 400 });
@@ -91,15 +90,6 @@ export async function POST(req) {
       }
     }
 
-    let meetings = [];
-    if (meetingsRaw) {
-      try {
-        meetings = JSON.parse(meetingsRaw);
-      } catch (e) {
-        console.error('Invalid meetings JSON');
-      }
-    }
-
     const savedFiles = await saveFiles(attachments);
 
     const newCase = await AccOagReferral.create({
@@ -110,7 +100,6 @@ export async function POST(req) {
       investigatorContact,
       attachments: savedFiles,
       accusedDetails,
-      meetings,                     // ✅ store meetings
       status: 'Pending',
       remarks,
     });
@@ -147,7 +136,6 @@ export async function PUT(req) {
     const attachments = formData.getAll('attachments');
     const existingAttachmentsRaw = formData.get('existingAttachments');
     const accusedDetailsRaw = formData.get('accusedDetails');
-    const meetingsRaw = formData.get('meetings');       // ✅ new
 
     if (caseNo !== existing.caseNo) {
       const duplicate = await AccOagReferral.findOne({ caseNo, _id: { $ne: _id } });
@@ -190,17 +178,6 @@ export async function PUT(req) {
       accusedDetails = existing.accusedDetails;
     }
 
-    let meetings = [];
-    if (meetingsRaw) {
-      try {
-        meetings = JSON.parse(meetingsRaw);
-      } catch (e) {
-        meetings = existing.meetings || [];
-      }
-    } else {
-      meetings = existing.meetings || [];
-    }
-
     const updated = await AccOagReferral.findByIdAndUpdate(
       _id,
       {
@@ -211,7 +188,6 @@ export async function PUT(req) {
         investigatorContact,
         attachments: allAttachments,
         accusedDetails,
-        meetings,                     // ✅ update meetings
         status,
         remarks,
       },
