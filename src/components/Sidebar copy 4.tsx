@@ -40,7 +40,7 @@ export default function Sidebar() {
   const [userRole, setUserRole] = useState("Officer");
   const [isAdminUser, setIsAdminUser] = useState(false);
   const [agencyName, setAgencyName] = useState<string>("");
-  const [openSection, setOpenSection] = useState<"master" | "leave" | "offence" | null>(
+  const [openSection, setOpenSection] = useState<"master" | "leave" | null>(
     null,
   );
 
@@ -132,9 +132,6 @@ export default function Sidebar() {
     pathname === "/admin/individual-leave-balance" ||
     pathname === "/admin/my-leave";
 
-  const isOffenceActive =
-    pathname === "/admin/act" || pathname === "/admin/office";
-
   const canHandleLeaveApprovals =
     isAdmin ||
     [
@@ -152,13 +149,11 @@ export default function Sidebar() {
     openSection ||
     (isMasterActive
       ? "master"
-      : isOffenceActive
-      ? "offence"
       : isLeaveActive || (!isAdmin && canHandleLeaveApprovals)
         ? "leave"
         : null);
 
-  const toggleSection = (section: "master" | "leave" | "offence") => {
+  const toggleSection = (section: "master" | "leave") => {
     setOpenSection(displayedOpenSection === section ? null : section);
   };
 
@@ -235,49 +230,6 @@ export default function Sidebar() {
                 </button>
               </div>
             )}
-
-            {/* Offence Menu */}
-            <button
-                onClick={() => toggleSection("offence")}
-                className={navButtonClass(isOffenceActive)}
-              >
-                <Layers size={18} /> 
-                <span className="flex-1 text-left">Offence</span>
-                {displayedOpenSection === "offence" ? (
-                  <ChevronDown size={16} />
-                ) : (
-                  <ChevronRight size={16} />
-                )}
-              </button>
-
-              {displayedOpenSection === "offence" && (
-                <div className="ml-8 mt-1 space-y-1">
-                  <button
-                    onClick={() => router.push("/admin/offence/act")}
-                    className={navSubButtonClass(
-                      pathname === "/admin/offence/act",
-                    )}
-                  >
-                    Act
-                  </button>
-                  <button
-                    onClick={() => router.push("/admin/offence/sections")}
-                    className={navSubButtonClass(
-                      pathname === "/admin/offence/sections",
-                    )}
-                  >
-                    Sections
-                  </button>
-                  <button
-                    onClick={() => router.push("/admin/offence/charges")}
-                    className={navSubButtonClass(
-                      pathname === "/admin/offence/charges",
-                    )}
-                  >
-                    Charges
-                  </button>
-                </div>
-              )}
 
             {/* LEAVE MENU - COMMENTED OUT */}
             {/*
@@ -359,13 +311,7 @@ export default function Sidebar() {
               <span className="flex-1 text-left">Raa-Acc-Referral</span>
             </button>
 
-             <button
-              onClick={() => router.push("/admin/acc-oag-referral")}
-              className={navButtonClass(pathname.startsWith("/admin/acc-oag-referral"))}
-            >
-              <Shield size={18} />
-              <span className="flex-1 text-left">Acc-Oag-Referral</span>
-            </button>
+            
 
             <button
               onClick={() => {

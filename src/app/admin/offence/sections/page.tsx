@@ -4,9 +4,16 @@ import { useState, useEffect } from "react";
 import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
-interface Agency {
+interface Act {
   _id: string;
   name: string;
+}
+
+interface Section {
+  _id: string;
+  name: string;
+  actId: Act | string;
+  actName?: string; // populated from API
   remarks: string;
 }
 
@@ -15,105 +22,144 @@ interface Notification {
   type: "success" | "error";
 }
 
-export default function AgenciesPage() {
-  const [agencies, setAgencies] = useState<Agency[]>([]);
+export default function SectionsPage() {
+  const [sections, setSections] = useState<Section[]>([]);
+  const [acts, setActs] = useState<Act[]>([]);
   const [showForm, setShowForm] = useState(false);
-  const [editData, setEditData] = useState<Agency | null>(null);
+  const [editData, setEditData] = useState<Section | null>(null);
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
-  const [sortConfig, setSortConfig] = useState<{ key: keyof Agency | null; direction: "asc" | "desc" }>({
-    key: null,
-    direction: "asc",
-  });
+  const [sortConfig, setSortConfig] = useState<{
+    key: keyof Section | null;
+    direction: "asc" | "desc";
+  }>({ key: null, direction: "asc" });
   const [notification, setNotification] = useState<Notification | null>(null);
-  const [formData, setFormData] = useState({ name: "", remarks: "" });
+  const [formData, setFormData] = useState({ name: "", actId: "", remarks: "" });
 
-  // ================== FETCH AGENCIES ==================
-  const fetchAgencies = async () => {
+  // Fetch all Acts for dropdown
+  const fetchActs = async () => {
     try {
-      const res = await fetch("/api/agencies");
-      if (!res.ok) throw new Error("Failed to fetch agencies");
+      const res = await fetch("/api/offences/act");
+      if (!res.ok) throw new Error();
       const data = await res.json();
-      setAgencies(data);
+      setActs(data);
     } catch (error) {
-      console.error(error);
-      showNotification("Failed to load agencies", "error");
+      showNotification("Failed to load acts", "error");
+    }
+  };
+
+  // Fetch Sections (all, because we want to show Act name via populate)
+  const fetchSections = async () => {
+    try {
+      const res = await fetch("/api/offences/sections");
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      // data already has actId populated with { _id, name }
+      setSections(data);
+    } catch (error) {
+      showNotification("Failed to load sections", "error");
     }
   };
 
   useEffect(() => {
-    fetchAgencies();
+    fetchActs();
+    fetchSections();
   }, []);
 
-  // ================== HANDLERS ==================
-  const handleFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFormChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
   };
 
   const handleAdd = async () => {
     if (!formData.name.trim()) {
-      showNotification("Agency Name is required", "error");
+      showNotification("Section name is required", "error");
+      return;
+    }
+    if (!formData.actId) {
+      showNotification("Please select an Act", "error");
       return;
     }
     try {
-      const res = await fetch("/api/agencies", {
+      const res = await fetch("/api/offences/sections", {
         method: "POST",
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          name: formData.name,
+          actId: formData.actId,
+          remarks: formData.remarks,
+        }),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error("Failed to add");
-      await fetchAgencies();
-      setFormData({ name: "", remarks: "" });
+      if (!res.ok) throw new Error();
+      await fetchSections();
+      setFormData({ name: "", actId: "", remarks: "" });
       setShowForm(false);
-      showNotification("Agency added successfully", "success");
+      showNotification("Section added successfully", "success");
     } catch (error) {
-      showNotification(error instanceof Error ? error.message : "Failed to add agency", "error");
+      showNotification("Failed to add section", "error");
     }
   };
 
-  const handleEdit = (agency: Agency) => {
-    setEditData(agency);
-    setFormData({ name: agency.name, remarks: agency.remarks });
+  const handleEdit = (section: Section) => {
+    setEditData(section);
+    // Extract actId (whether it's object or string)
+    const actIdValue =
+      typeof section.actId === "object" ? section.actId._id : section.actId;
+    setFormData({
+      name: section.name,
+      actId: actIdValue,
+      remarks: section.remarks || "",
+    });
     setShowForm(true);
   };
 
   const handleUpdate = async () => {
     if (!formData.name.trim()) {
-      showNotification("Agency Name is required", "error");
+      showNotification("Section name is required", "error");
+      return;
+    }
+    if (!formData.actId) {
+      showNotification("Please select an Act", "error");
       return;
     }
     try {
-      const res = await fetch("/api/agencies", {
+      const res = await fetch("/api/offences/sections", {
         method: "PUT",
-        body: JSON.stringify({ ...formData, _id: editData?._id }),
+        body: JSON.stringify({
+          _id: editData?._id,
+          name: formData.name,
+          actId: formData.actId,
+          remarks: formData.remarks,
+        }),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error("Failed to update");
-      await fetchAgencies();
-      setFormData({ name: "", remarks: "" });
+      if (!res.ok) throw new Error();
+      await fetchSections();
+      setFormData({ name: "", actId: "", remarks: "" });
       setEditData(null);
       setShowForm(false);
-      showNotification("Agency updated successfully", "success");
+      showNotification("Section updated successfully", "success");
     } catch (error) {
-      showNotification(error instanceof Error ? error.message : "Failed to update agency", "error");
+      showNotification("Failed to update section", "error");
     }
   };
 
-  const handleDelete = async (agency: Agency) => {
-    if (!confirm(`Are you sure you want to delete "${agency.name}"?`)) return;
+  const handleDelete = async (section: Section) => {
+    if (!confirm(`Delete section "${section.name}"?`)) return;
     try {
-      const res = await fetch("/api/agencies", {
+      const res = await fetch("/api/offences/sections", {
         method: "DELETE",
-        body: JSON.stringify({ _id: agency._id }),
+        body: JSON.stringify({ _id: section._id }),
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error("Failed to delete");
-      await fetchAgencies();
-      showNotification("Agency deleted successfully", "success");
+      if (!res.ok) throw new Error();
+      await fetchSections();
+      showNotification("Section deleted successfully", "success");
     } catch (error) {
-      showNotification(error instanceof Error ? error.message : "Failed to delete agency", "error");
+      showNotification("Failed to delete section", "error");
     }
   };
 
@@ -122,9 +168,10 @@ export default function AgenciesPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  const handleSort = (key: keyof Agency) => {
+  const handleSort = (key: keyof Section) => {
     let direction: "asc" | "desc" = "asc";
-    if (sortConfig.key === key && sortConfig.direction === "asc") direction = "desc";
+    if (sortConfig.key === key && sortConfig.direction === "asc")
+      direction = "desc";
     setSortConfig({ key, direction });
   };
 
@@ -138,47 +185,70 @@ export default function AgenciesPage() {
     setCurrentPage(1);
   };
 
-  // ================== FILTER & SORT ==================
-  const filteredAgencies = agencies.filter(
-    (agency) =>
-      (agency.name?.toLowerCase() || "").includes(search.toLowerCase()) ||
-      (agency.remarks?.toLowerCase() || "").includes(search.toLowerCase())
-  );
+  // Helper: get Act name from section
+  const getActName = (section: Section): string => {
+    if (typeof section.actId === "object" && section.actId !== null) {
+      return section.actId.name;
+    }
+    return section.actName || "Unknown Act";
+  };
 
-  const sortedAgencies = [...filteredAgencies];
+  // Filter & Sort
+  const filteredSections = sections.filter((section) => {
+    const actName = getActName(section);
+    return (
+      (section.name?.toLowerCase() || "").includes(search.toLowerCase()) ||
+      actName.toLowerCase().includes(search.toLowerCase()) ||
+      (section.remarks?.toLowerCase() || "").includes(search.toLowerCase())
+    );
+  });
+
+  const sortedSections = [...filteredSections];
   if (sortConfig.key) {
-    sortedAgencies.sort((a, b) => {
-      const aValue = a[sortConfig.key!] || "";
-      const bValue = b[sortConfig.key!] || "";
-      if (aValue < bValue) return sortConfig.direction === "asc" ? -1 : 1;
-      if (aValue > bValue) return sortConfig.direction === "asc" ? 1 : -1;
+    sortedSections.sort((a, b) => {
+      let aVal = "",
+        bVal = "";
+      if (sortConfig.key === "name") {
+        aVal = a.name || "";
+        bVal = b.name || "";
+      } else if (sortConfig.key === "remarks") {
+        aVal = a.remarks || "";
+        bVal = b.remarks || "";
+      } else if (sortConfig.key === "actId") {
+        aVal = getActName(a);
+        bVal = getActName(b);
+      }
+      if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
       return 0;
     });
   }
 
-  const totalPages = Math.ceil(sortedAgencies.length / rowsPerPage);
+  const totalPages = Math.ceil(sortedSections.length / rowsPerPage);
   const startIndex = (currentPage - 1) * rowsPerPage;
-  const paginatedAgencies = sortedAgencies.slice(startIndex, startIndex + rowsPerPage);
+  const paginatedSections = sortedSections.slice(
+    startIndex,
+    startIndex + rowsPerPage
+  );
 
   return (
     <div className="flex">
       <Sidebar />
-
       <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold">Agency List</h1>
+          <h1 className="text-2xl font-bold">Section List</h1>
           {!showForm && (
             <button
               onClick={() => {
                 setShowForm(true);
                 setEditData(null);
-                setFormData({ name: "", remarks: "" });
+                setFormData({ name: "", actId: "", remarks: "" });
               }}
               className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
               <Plus size={14} />
-              Add Agency
+              Add Section
             </button>
           )}
         </div>
@@ -201,25 +271,47 @@ export default function AgenciesPage() {
           <div className="bg-white shadow rounded-xl p-6 mb-6">
             <div className="flex justify-between mb-4">
               <h2 className="text-lg font-semibold">
-                {editData ? "Edit Agency" : "Add Agency"}
+                {editData ? "Edit Section" : "Add Section"}
               </h2>
-              <button onClick={() => setShowForm(false)} className="text-xl text-gray-500">
+              <button
+                onClick={() => setShowForm(false)}
+                className="text-xl text-gray-500"
+              >
                 ✕
               </button>
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">
+              {/* Act Dropdown */}
               <div>
-                <label className="text-sm font-medium">Agency Name</label>
+                <label className="text-sm font-medium">Act</label>
+                <select
+                  name="actId"
+                  value={formData.actId}
+                  onChange={handleFormChange}
+                  className="w-full border rounded px-3 py-2"
+                  required
+                >
+                  <option value="">Select Act</option>
+                  {acts.map((act) => (
+                    <option key={act._id} value={act._id}>
+                      {act.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-sm font-medium">Section Name</label>
                 <input
                   name="name"
                   type="text"
                   value={formData.name}
                   onChange={handleFormChange}
                   className="w-full border rounded px-3 py-2"
+                  placeholder="e.g., Section 302, Article 14, etc."
                 />
               </div>
-              <div>
+              <div className="md:col-span-2">
                 <label className="text-sm font-medium">Remarks</label>
                 <input
                   name="remarks"
@@ -255,12 +347,16 @@ export default function AgenciesPage() {
             type="text"
             value={search}
             onChange={handleSearchChange}
-            placeholder="Search by name or remarks..."
+            placeholder="Search by section name, act, or remarks..."
             className="w-64 px-4 py-2 border rounded focus:ring-2 focus:ring-blue-400 outline-none"
           />
           <div className="flex items-center gap-2 text-sm">
             <span>Show</span>
-            <select value={rowsPerPage} onChange={handleRowsChange} className="border rounded px-2 py-1">
+            <select
+              value={rowsPerPage}
+              onChange={handleRowsChange}
+              className="border rounded px-2 py-1"
+            >
               <option value={10}>10</option>
               <option value={20}>20</option>
               <option value={30}>30</option>
@@ -275,12 +371,25 @@ export default function AgenciesPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">S/N</th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
+                  S/N
+                </th>
+                <th
+                  onClick={() => handleSort("actId")}
+                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none"
+                >
+                  Act{" "}
+                  {sortConfig.key === "actId"
+                    ? sortConfig.direction === "asc"
+                      ? "▲"
+                      : "▼"
+                    : "▲▼"}
+                </th>
                 <th
                   onClick={() => handleSort("name")}
                   className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none"
                 >
-                  Agency Name{" "}
+                  Section Name{" "}
                   {sortConfig.key === "name"
                     ? sortConfig.direction === "asc"
                       ? "▲"
@@ -298,25 +407,33 @@ export default function AgenciesPage() {
                       : "▼"
                     : "▲▼"}
                 </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">Actions</th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {paginatedAgencies.length > 0 ? (
-                paginatedAgencies.map((agency, index) => (
-                  <tr key={agency._id} className="hover:bg-gray-100 transition-colors">
-                    <td className="px-6 py-3 text-sm">{startIndex + index + 1}</td>
-                    <td className="px-6 py-3 text-sm">{agency.name}</td>
-                    <td className="px-6 py-3 text-sm">{agency.remarks}</td>
+              {paginatedSections.length > 0 ? (
+                paginatedSections.map((section, idx) => (
+                  <tr
+                    key={section._id}
+                    className="hover:bg-gray-100 transition-colors"
+                  >
+                    <td className="px-6 py-3 text-sm">{startIndex + idx + 1}</td>
+                    <td className="px-6 py-3 text-sm">{getActName(section)}</td>
+                    <td className="px-6 py-3 text-sm">{section.name}</td>
+                    <td className="px-6 py-3 text-sm">
+                      {section.remarks || "—"}
+                    </td>
                     <td className="px-6 py-3 text-sm flex gap-2">
                       <button
-                        onClick={() => handleEdit(agency)}
+                        onClick={() => handleEdit(section)}
                         className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
                       >
                         <Pencil size={14} /> Edit
                       </button>
                       <button
-                        onClick={() => handleDelete(agency)}
+                        onClick={() => handleDelete(section)}
                         className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
                       >
                         <Trash2 size={14} /> Delete
@@ -326,7 +443,7 @@ export default function AgenciesPage() {
                 ))
               ) : (
                 <tr>
-                  <td colSpan={4} className="text-center py-6 text-gray-500">
+                  <td colSpan={5} className="text-center py-6 text-gray-500">
                     No records found
                   </td>
                 </tr>
@@ -342,7 +459,9 @@ export default function AgenciesPage() {
               disabled={currentPage === 1}
               onClick={() => setCurrentPage(currentPage - 1)}
               className={`font-semibold text-lg ${
-                currentPage === 1 ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"
+                currentPage === 1
+                  ? "text-gray-400 cursor-not-allowed"
+                  : "hover:text-blue-600"
               }`}
             >
               &lt;
@@ -354,7 +473,9 @@ export default function AgenciesPage() {
               disabled={currentPage === totalPages}
               onClick={() => setCurrentPage(currentPage + 1)}
               className={`font-semibold text-lg ${
-                currentPage === totalPages ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"
+                currentPage === totalPages
+                  ? "text-gray-400 cursor-not-allowed"
+                  : "hover:text-blue-600"
               }`}
             >
               &gt;
