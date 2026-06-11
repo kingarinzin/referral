@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Trash2, Pencil, Plus } from "lucide-react";
+import { Trash2, Pencil, Save, Check, X, Plus } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 export default function DivisionPage() {
@@ -16,21 +16,14 @@ export default function DivisionPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [sortConfig, setSortConfig] = useState({ key: null, direction: "asc" });
   const [notification, setNotification] = useState(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    remarks: "",
-    agencyId: "",
-    departmentId: "",
-  });
+  const [formData, setFormData] = useState({ name: "", remarks: "", agencyId: "", departmentId: "" });
 
-  // ---------- Fetch Functions ----------
   const fetchAgencies = async () => {
     try {
       const res = await fetch("/api/agencies");
       const data = await res.json();
       setAgencies(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Failed to fetch agencies", err);
       setAgencies([]);
     }
   };
@@ -41,7 +34,6 @@ export default function DivisionPage() {
       const data = await res.json();
       setDepartments(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Failed to fetch departments", err);
       setDepartments([]);
     }
   };
@@ -52,49 +44,30 @@ export default function DivisionPage() {
       const data = await res.json();
       setDivisions(Array.isArray(data) ? data : []);
     } catch (err) {
-      console.error("Failed to fetch divisions", err);
       setDivisions([]);
     }
   };
 
-  // ---------- Initial Data Load ----------
   useEffect(() => {
     fetchAgencies();
     fetchDepartments();
     fetchDivisions();
   }, []);
 
-  // ---------- Filter departments when agency changes ----------
-  // IMPORTANT: Do NOT reset departmentId here – that would break edit mode
   useEffect(() => {
     if (formData.agencyId && departments.length) {
-      const filtered = departments.filter(
-        (dept) => dept.agencyId === formData.agencyId
-      );
+      const filtered = departments.filter((dept) => dept.agencyId === formData.agencyId);
       setFilteredDepartments(filtered);
+      setFormData((prev) => ({ ...prev, departmentId: "" }));
     } else {
       setFilteredDepartments([]);
+      setFormData((prev) => ({ ...prev, departmentId: "" }));
     }
   }, [formData.agencyId, departments]);
 
-  // ---------- When editing, ensure filteredDepartments is ready ----------
-  useEffect(() => {
-    if (editData && formData.agencyId && departments.length) {
-      const filtered = departments.filter(
-        (dept) => dept.agencyId === formData.agencyId
-      );
-      setFilteredDepartments(filtered);
-    }
-  }, [editData, formData.agencyId, departments]);
-
-  // ---------- Form Handlers ----------
   const handleFormChange = (e) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-    // If user changes agency manually, clear the department selection
-    if (name === "agencyId") {
-      setFormData((prev) => ({ ...prev, departmentId: "" }));
-    }
+    setFormData({ ...formData, [name]: value });
   };
 
   const showNotification = (message, type = "success") => {
@@ -102,7 +75,6 @@ export default function DivisionPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // ---------- CRUD Operations ----------
   const handleAdd = async () => {
     if (!formData.name || !formData.departmentId) {
       showNotification("Division name and department are required", "error");
@@ -111,11 +83,7 @@ export default function DivisionPage() {
     try {
       const res = await fetch("/api/divisions", {
         method: "POST",
-        body: JSON.stringify({
-          name: formData.name,
-          departmentId: formData.departmentId,
-          remarks: formData.remarks,
-        }),
+        body: JSON.stringify({ name: formData.name, departmentId: formData.departmentId, remarks: formData.remarks }),
         headers: { "Content-Type": "application/json" },
       });
       const data = await res.json();
@@ -170,20 +138,18 @@ export default function DivisionPage() {
   };
 
   const handleEdit = (division) => {
-    // Safely extract agencyId and departmentId
-    const agencyId = division.departmentId?.agencyId || "";
-    const departmentId = division.departmentId?._id || "";
     setEditData(division);
+    const agencyId = division.departmentId?.agencyId || "";
     setFormData({
       name: division.name || "",
       remarks: division.remarks || "",
       agencyId: agencyId,
-      departmentId: departmentId,
+      departmentId: division.departmentId?._id || "",
     });
     setShowForm(true);
   };
 
-  // ---------- Filter, Sort, Pagination ----------
+  // Filter, sort, pagination
   const filteredDivisions = divisions.filter(
     (d) =>
       (d.name?.toLowerCase() || "").includes(search.toLowerCase()) ||
@@ -214,19 +180,8 @@ export default function DivisionPage() {
 
   const totalPages = Math.ceil(sortedDivisions.length / rowsPerPage);
   const startIndex = (currentPage - 1) * rowsPerPage;
-  const paginatedDivisions = sortedDivisions.slice(
-    startIndex,
-    startIndex + rowsPerPage
-  );
+  const paginatedDivisions = sortedDivisions.slice(startIndex, startIndex + rowsPerPage);
 
-  const handleSort = (key) => {
-    let direction = "asc";
-    if (sortConfig.key === key && sortConfig.direction === "asc")
-      direction = "desc";
-    setSortConfig({ key, direction });
-  };
-
-  // ---------- Render ----------
   return (
     <div className="flex">
       <Sidebar />
@@ -239,12 +194,7 @@ export default function DivisionPage() {
               onClick={() => {
                 setShowForm(true);
                 setEditData(null);
-                setFormData({
-                  name: "",
-                  remarks: "",
-                  agencyId: "",
-                  departmentId: "",
-                });
+                setFormData({ name: "", remarks: "", agencyId: "", departmentId: "" });
               }}
               className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
             >
@@ -255,13 +205,7 @@ export default function DivisionPage() {
 
         {/* Notification */}
         {notification && (
-          <div
-            className={`mb-4 px-4 py-2 rounded ${
-              notification.type === "success"
-                ? "bg-green-100 text-green-700"
-                : "bg-red-100 text-red-700"
-            }`}
-          >
+          <div className={`mb-4 px-4 py-2 rounded ${notification.type === "success" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
             {notification.message}
           </div>
         )}
@@ -270,87 +214,41 @@ export default function DivisionPage() {
         {showForm && (
           <div className="bg-white shadow rounded-xl p-6 mb-6">
             <div className="flex justify-between mb-4">
-              <h2 className="text-lg font-semibold">
-                {editData ? "Edit Division" : "Add Division"}
-              </h2>
-              <button
-                onClick={() => setShowForm(false)}
-                className="text-xl text-gray-500"
-              >
-                ✕
-              </button>
+              <h2 className="text-lg font-semibold">{editData ? "Edit Division" : "Add Division"}</h2>
+              <button onClick={() => setShowForm(false)} className="text-xl text-gray-500">✕</button>
             </div>
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium">Agency</label>
-                <select
-                  name="agencyId"
-                  value={formData.agencyId}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                >
+                <select name="agencyId" value={formData.agencyId} onChange={handleFormChange} className="w-full border rounded px-3 py-2">
                   <option value="">-- Select Agency --</option>
                   {agencies.map((a) => (
-                    <option key={a._id} value={a._id}>
-                      {a.name}
-                    </option>
+                    <option key={a._id} value={a._id}>{a.name}</option>
                   ))}
                 </select>
               </div>
               <div>
                 <label className="text-sm font-medium">Department</label>
-                <select
-                  name="departmentId"
-                  value={formData.departmentId}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                  disabled={!formData.agencyId}
-                >
+                <select name="departmentId" value={formData.departmentId} onChange={handleFormChange} className="w-full border rounded px-3 py-2" disabled={!formData.agencyId}>
                   <option value="">-- Select Department --</option>
                   {filteredDepartments.map((d) => (
-                    <option key={d._id} value={d._id}>
-                      {d.name}
-                    </option>
+                    <option key={d._id} value={d._id}>{d.name}</option>
                   ))}
                 </select>
-                {!formData.agencyId && (
-                  <p className="text-xs text-gray-500">Select an agency first</p>
-                )}
+                {!formData.agencyId && <p className="text-xs text-gray-500">Select an agency first</p>}
               </div>
               <div>
                 <label className="text-sm font-medium">Division Name</label>
-                <input
-                  type="text"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <input type="text" name="name" value={formData.name} onChange={handleFormChange} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
                 <label className="text-sm font-medium">Remarks</label>
-                <input
-                  type="text"
-                  name="remarks"
-                  value={formData.remarks}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <input type="text" name="remarks" value={formData.remarks} onChange={handleFormChange} className="w-full border rounded px-3 py-2" />
               </div>
             </div>
             <div className="flex justify-end gap-3 mt-5">
-              <button
-                onClick={() => setShowForm(false)}
-                className="px-4 py-2 border rounded"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={editData ? handleUpdate : handleAdd}
-                className="px-4 py-2 bg-blue-600 text-white rounded"
-              >
-                Save
-              </button>
+              <button onClick={() => setShowForm(false)} className="px-4 py-2 border rounded">Cancel</button>
+              <button onClick={editData ? handleUpdate : handleAdd} className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
             </div>
           </div>
         )}
@@ -360,95 +258,31 @@ export default function DivisionPage() {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  S/N
-                </th>
-                <th
-                  onClick={() => handleSort("agencyName")}
-                  className="cursor-pointer px-6 py-3 text-left text-sm font-medium uppercase"
-                >
-                  Agency{" "}
-                  {sortConfig.key === "agencyName"
-                    ? sortConfig.direction === "asc"
-                      ? "▲"
-                      : "▼"
-                    : "▲▼"}
-                </th>
-                <th
-                  onClick={() => handleSort("departmentName")}
-                  className="cursor-pointer px-6 py-3 text-left text-sm font-medium uppercase"
-                >
-                  Department{" "}
-                  {sortConfig.key === "departmentName"
-                    ? sortConfig.direction === "asc"
-                      ? "▲"
-                      : "▼"
-                    : "▲▼"}
-                </th>
-                <th
-                  onClick={() => handleSort("name")}
-                  className="cursor-pointer px-6 py-3 text-left text-sm font-medium uppercase"
-                >
-                  Division{" "}
-                  {sortConfig.key === "name"
-                    ? sortConfig.direction === "asc"
-                      ? "▲"
-                      : "▼"
-                    : "▲▼"}
-                </th>
-                <th
-                  onClick={() => handleSort("remarks")}
-                  className="cursor-pointer px-6 py-3 text-left text-sm font-medium uppercase"
-                >
-                  Remarks{" "}
-                  {sortConfig.key === "remarks"
-                    ? sortConfig.direction === "asc"
-                      ? "▲"
-                      : "▼"
-                    : "▲▼"}
-                </th>
-                <th className="px-6 py-3 text-left text-sm font-medium uppercase">
-                  Actions
-                </th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">S/N</th>
+                <th onClick={() => handleSort("agencyName")} className="cursor-pointer px-6 py-3 text-left text-sm font-medium uppercase">Agency</th>
+                <th onClick={() => handleSort("departmentName")} className="cursor-pointer px-6 py-3 text-left text-sm font-medium uppercase">Department</th>
+                <th onClick={() => handleSort("name")} className="cursor-pointer px-6 py-3 text-left text-sm font-medium uppercase">Division</th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">Remarks</th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">Actions</th>
               </tr>
             </thead>
             <tbody>
               {paginatedDivisions.length > 0 ? (
                 paginatedDivisions.map((d, idx) => (
                   <tr key={d._id}>
-                    <td className="px-6 py-3 text-sm">
-                      {startIndex + idx + 1}
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {d.agencyName || "-"}
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {d.departmentName || "-"}
-                    </td>
+                    <td className="px-6 py-3 text-sm">{startIndex + idx + 1}</td>
+                    <td className="px-6 py-3 text-sm">{d.agencyName || "-"}</td>
+                    <td className="px-6 py-3 text-sm">{d.departmentName || "-"}</td>
                     <td className="px-6 py-3 text-sm">{d.name}</td>
                     <td className="px-6 py-3 text-sm">{d.remarks}</td>
                     <td className="px-6 py-3 text-sm flex gap-2">
-                      <button
-                        onClick={() => handleEdit(d)}
-                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                      >
-                        <Pencil size={14} /> Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(d)}
-                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                      >
-                        <Trash2 size={14} /> Delete
-                      </button>
+                      <button onClick={() => handleEdit(d)} className="px-2 py-1 bg-yellow-400 text-white rounded">Editttt</button>
+                      <button onClick={() => handleDelete(d)} className="px-2 py-1 bg-red-500 text-white rounded">Deleteeee</button>
                     </td>
                   </tr>
                 ))
               ) : (
-                <tr>
-                  <td colSpan="6" className="text-center py-6">
-                    No records found
-                  </td>
-                </tr>
+                <tr><td colSpan="6" className="text-center py-6">No records found</td></tr>
               )}
             </tbody>
           </table>
@@ -457,21 +291,9 @@ export default function DivisionPage() {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex justify-end gap-4 mt-5 text-sm">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage((p) => p - 1)}
-            >
-              &lt;
-            </button>
-            <span>
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage((p) => p + 1)}
-            >
-              &gt;
-            </button>
+            <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p-1)}>&lt;</button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p+1)}>&gt;</button>
           </div>
         )}
       </main>

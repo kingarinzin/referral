@@ -30,6 +30,8 @@ const AccOagReferralSchema = new mongoose.Schema(
     meetings: [MeetingSchema],
     status: { type: String, default: 'Pending' },
     remarks: { type: String, default: '' },
+    // ✅ ADD THIS LINE
+    referredToOAG: { type: Boolean, default: false }
   },
   { timestamps: true }
 );

@@ -45,7 +45,7 @@ function LoginForm() {
       if (data.isAdmin || data.isAgencyAdmin) {
         router.push("/admin/pending-users");
       } else {
-        router.push("/dashboard/leave");
+        router.push("/admin/acc-oag-referral");
       }
     } catch {
       setMessage("Server error");

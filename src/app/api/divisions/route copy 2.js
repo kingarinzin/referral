@@ -5,6 +5,7 @@ import clientPromise from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 
 async function ensureMongoose() {
+  // Force use referral_db
   const targetDbName = "referral_db";
   if (mongoose.connection.readyState && mongoose.connection.name !== targetDbName) {
     await mongoose.disconnect();
@@ -16,12 +17,11 @@ async function ensureMongoose() {
   }
 }
 
-// ========== GET ==========
 export async function GET() {
   try {
     await ensureMongoose();
     const client = await clientPromise;
-    const db = client.db("referral_db");
+    const db = client.db("referral_db");  // hardcoded
 
     const divisions = await db.collection("divisions").aggregate([
       {
@@ -96,7 +96,6 @@ export async function GET() {
   }
 }
 
-// ========== POST (Create) ==========
 export async function POST(request) {
   try {
     await ensureMongoose();
@@ -115,11 +114,15 @@ export async function POST(request) {
     }
 
     const client = await clientPromise;
-    const db = client.db("referral_db");
+    const db = client.db("referral_db"); // hardcoded
     const department = await db.collection("departments").findOne({ _id: deptObjectId });
 
     if (!department) {
-      return NextResponse.json({ error: `Department not found with id: ${departmentId}` }, { status: 400 });
+      // Try as string (just in case)
+      const fallback = await db.collection("departments").findOne({ _id: departmentId });
+      if (!fallback) {
+        return NextResponse.json({ error: `Department not found with id: ${departmentId}` }, { status: 400 });
+      }
     }
 
     const newDivision = await Division.create({
@@ -131,89 +134,6 @@ export async function POST(request) {
     return NextResponse.json(newDivision, { status: 201 });
   } catch (error) {
     console.error("POST /api/divisions error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-// ========== PUT (Update) ==========
-export async function PUT(request) {
-  try {
-    await ensureMongoose();
-    const body = await request.json();
-    const { _id, name, departmentId, remarks } = body;
-
-    if (!_id || !name || !departmentId) {
-      return NextResponse.json({ error: "ID, Name, and Department are required" }, { status: 400 });
-    }
-
-    let divisionObjectId, deptObjectId;
-    try {
-      divisionObjectId = new ObjectId(_id);
-      deptObjectId = new ObjectId(departmentId);
-    } catch (err) {
-      return NextResponse.json({ error: "Invalid ID format" }, { status: 400 });
-    }
-
-    const client = await clientPromise;
-    const db = client.db("referral_db");
-
-    // Verify department exists
-    const department = await db.collection("departments").findOne({ _id: deptObjectId });
-    if (!department) {
-      return NextResponse.json({ error: `Department not found with id: ${departmentId}` }, { status: 400 });
-    }
-
-    const result = await db.collection("divisions").updateOne(
-      { _id: divisionObjectId },
-      {
-        $set: {
-          name,
-          departmentId: deptObjectId,
-          remarks: remarks || "",
-          updatedAt: new Date(),
-        },
-      }
-    );
-
-    if (result.matchedCount === 0) {
-      return NextResponse.json({ error: "Division not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ message: "Division updated successfully" }, { status: 200 });
-  } catch (error) {
-    console.error("PUT /api/divisions error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-}
-
-// ========== DELETE ==========
-export async function DELETE(request) {
-  try {
-    await ensureMongoose();
-    const { _id } = await request.json();
-
-    if (!_id) {
-      return NextResponse.json({ error: "Division ID is required" }, { status: 400 });
-    }
-
-    let objectId;
-    try {
-      objectId = new ObjectId(_id);
-    } catch (err) {
-      return NextResponse.json({ error: "Invalid division ID format" }, { status: 400 });
-    }
-
-    const client = await clientPromise;
-    const db = client.db("referral_db");
-    const result = await db.collection("divisions").deleteOne({ _id: objectId });
-
-    if (result.deletedCount === 0) {
-      return NextResponse.json({ error: "Division not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ message: "Division deleted successfully" }, { status: 200 });
-  } catch (error) {
-    console.error("DELETE /api/divisions error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
