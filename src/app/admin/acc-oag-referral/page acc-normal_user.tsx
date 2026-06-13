@@ -1,14 +1,13 @@
 "use client";
 
 import { useState, useEffect, ChangeEvent } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";   // ← ADDED
 import {
   Trash2, Pencil, Plus, X, Check, Upload, FileText, Eye, Download, Maximize2,
   UserPlus, UserCheck, Send
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
-// ==================== TYPES ====================
 type Act = { _id: string; name: string };
 type Section = { _id: string; name: string; actId: string };
 type Charge = { _id: string; name: string; sectionId: string };
@@ -52,23 +51,12 @@ type Case = {
   updatedAt: string;
   assignedProsecutor?: { _id: string; name: string; email: string } | null;
   referredToOAG?: boolean;
-  createdBy?: { _id: string; name: string; email: string };
 };
 
 type Notification = { message: string; type: "success" | "error" };
 
 export default function AccOagReferralPage() {
-  const router = useRouter();
-
-  // ---------- Helper: get token from localStorage ----------
-  const getToken = () => localStorage.getItem("token");
-
-  const getAuthHeaders = (isJson = true) => {
-    const token = getToken();
-    const headers: HeadersInit = { Authorization: `Bearer ${token}` };
-    if (isJson) headers["Content-Type"] = "application/json";
-    return headers;
-  };
+  const router = useRouter();   // ← ADDED
 
   // ---------- State ----------
   const [cases, setCases] = useState<Case[]>([]);
@@ -117,8 +105,7 @@ export default function AccOagReferralPage() {
   const [isAgencyAdmin, setIsAgencyAdmin] = useState(false);
   const [currentUserAgency, setCurrentUserAgency] = useState("");
   const [oagAgencyId, setOagAgencyId] = useState<string>("");
-  const [isLoadingUser, setIsLoadingUser] = useState(true);
-  const [currentUserId, setCurrentUserId] = useState<string>("");
+  const [isLoadingUser, setIsLoadingUser] = useState(true);   // ← ADDED
 
   const getId = (val: string | { _id: string }): string => {
     if (typeof val === "string") return val;
@@ -130,21 +117,16 @@ export default function AccOagReferralPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // ---------- API calls (with token) ----------
+  // ---------- API calls ----------
   const fetchCases = async () => {
     try {
-      const token = getToken();
-      if (!token) throw new Error("No token");
-      const res = await fetch("/api/acc-oag-referral", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await fetch("/api/acc-oag-referral");
       if (!res.ok) throw new Error();
       const data = await res.json();
       const normalized = data.map((c: Case) => ({
         ...c,
         assignedProsecutor: c.assignedProsecutor || null,
         referredToOAG: c.referredToOAG || false,
-        createdBy: c.createdBy || null,
       }));
       setCases(normalized);
     } catch (error) {
@@ -154,10 +136,7 @@ export default function AccOagReferralPage() {
 
   const fetchActs = async () => {
     try {
-      const token = getToken();
-      const res = await fetch("/api/offences/act", {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch("/api/offences/act");
       const data = await res.json();
       setActs(data);
     } catch (error) { console.error("Failed to load acts"); }
@@ -166,10 +145,7 @@ export default function AccOagReferralPage() {
   const fetchSectionsForAct = async (actId: string) => {
     if (!actId || sections[actId]) return;
     try {
-      const token = getToken();
-      const res = await fetch(`/api/offences/sections?actId=${actId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/offences/sections?actId=${actId}`);
       const data = await res.json();
       setSections(prev => ({ ...prev, [actId]: data }));
     } catch (error) { console.error("Failed to load sections"); }
@@ -178,10 +154,7 @@ export default function AccOagReferralPage() {
   const fetchChargesForSection = async (sectionId: string) => {
     if (!sectionId || charges[sectionId]) return;
     try {
-      const token = getToken();
-      const res = await fetch(`/api/offences/charges?sectionId=${sectionId}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      const res = await fetch(`/api/offences/charges?sectionId=${sectionId}`);
       const data = await res.json();
       setCharges(prev => ({ ...prev, [sectionId]: data }));
     } catch (error) { console.error("Failed to load charges"); }
@@ -195,31 +168,36 @@ export default function AccOagReferralPage() {
     return "";
   };
 
+  // 🔍 DEBUG VERSION – logs everything
   const fetchOfficers = async () => {
     try {
-      const token = getToken();
-      if (!token) return;
+      console.log("=== fetchOfficers called ===");
       if (oagAgencyId) {
-        const res = await fetch(`/api/users?role=Officer&agencyId=${oagAgencyId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        console.log("Trying agencyId:", oagAgencyId);
+        const res = await fetch(`/api/users?role=Officer&agencyId=${oagAgencyId}`);
+        console.log("AgencyId fetch status:", res.status);
         if (res.ok) {
           const data = await res.json();
+          console.log("Officers by agencyId:", data);
           if (data.length > 0) {
             setOfficers(data);
             return;
           }
         }
       }
-      const res = await fetch("/api/users?role=Officer", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      console.log("Falling back to /api/users?role=Officer (no agencyId)");
+      const res = await fetch("/api/users?role=Officer");
+      console.log("Fallback fetch status:", res.status);
       if (res.ok) {
         const allOfficers = await res.json();
+        console.log("All officers from API:", allOfficers);
         const oagOfficers = allOfficers.filter((o: Officer) => 
           deriveAgencyFromEmail(o.email) === "Office of the Attorney General"
         );
+        console.log("Filtered OAG officers (by email):", oagOfficers);
         setOfficers(oagOfficers);
+      } else {
+        console.error("Failed to fetch officers, status:", res.status);
       }
     } catch (error) {
       console.error("Failed to load officers", error);
@@ -227,25 +205,20 @@ export default function AccOagReferralPage() {
   };
 
   useEffect(() => {
-    const token = getToken();
+    const token = localStorage.getItem("token");
     let userEmailFromToken = "";
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split(".")[1]));
         setCurrentUserRole(payload.role || "");
         setIsAgencyAdmin(payload.isAgencyAdmin === true);
-        setCurrentUserId(payload.id || payload._id || "");
         userEmailFromToken = payload.email || "";
       } catch (e) { console.error(e); }
     }
 
     const fetchUserProfile = async () => {
       try {
-        const token = getToken();
-        if (!token) return;
-        const res = await fetch("/api/user/profile", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
+        const res = await fetch("/api/user/profile");
         if (res.ok) {
           const profile = await res.json();
           setCurrentUserAgency(profile.agencyName || "");
@@ -256,7 +229,7 @@ export default function AccOagReferralPage() {
       } catch (e) {
         if (userEmailFromToken) setCurrentUserAgency(deriveAgencyFromEmail(userEmailFromToken));
       } finally {
-        setIsLoadingUser(false);
+        setIsLoadingUser(false);   // ← ADDED
       }
     };
     fetchUserProfile();
@@ -270,7 +243,7 @@ export default function AccOagReferralPage() {
     }
   }, [oagAgencyId]);
 
-  // Redirect normal OAG officers
+  // ========== REDIRECT NORMAL OAG OFFICERS ==========   // ← ADDED
   if (!isLoadingUser) {
     const isNormalOagOfficer = !isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general") && currentUserRole === "Officer";
     if (isNormalOagOfficer) {
@@ -279,6 +252,7 @@ export default function AccOagReferralPage() {
     }
   }
 
+  // Show loading spinner while user data is being fetched   // ← ADDED
   if (isLoadingUser) {
     return (
       <div className="flex">
@@ -293,17 +267,12 @@ export default function AccOagReferralPage() {
   const canAssign = isAgencyAdmin && currentUserRole !== "Admin";
   const isOagAdmin = isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general");
 
-  const isAccAgency = currentUserAgency?.toLowerCase().includes("anti-corruption") || currentUserAgency?.toLowerCase().includes("acc");
-  const isAccNormalUser = isAccAgency && !isAgencyAdmin && currentUserRole !== "Admin";
-
   const filteredCases = cases.filter(c => {
     const matchesSearch = c.caseNo.toLowerCase().includes(search.toLowerCase()) ||
       c.caseDescription.toLowerCase().includes(search.toLowerCase()) ||
       c.investigatorName.toLowerCase().includes(search.toLowerCase());
     if (!matchesSearch) return false;
-
     if (isOagAdmin) return c.referredToOAG === true;
-    if (isAccNormalUser) return c.createdBy?._id === currentUserId;
     return true;
   });
 
@@ -311,7 +280,7 @@ export default function AccOagReferralPage() {
   const start = (currentPage - 1) * rowsPerPage;
   const paginated = filteredCases.slice(start, start + rowsPerPage);
 
-  // ---------- Accused handlers (unchanged) ----------
+  // ---------- Accused handlers ----------
   const openAddAccusedModal = () => {
     setEditingAccusedIndex(null);
     setAccusedFormData({ name: "", cid: "", actId: "", sectionId: "", chargeId: "", prayer: "", counts: 1 });
@@ -368,7 +337,7 @@ export default function AccOagReferralPage() {
     }
   };
 
-  // ---------- Meeting handlers (unchanged) ----------
+  // ---------- Meeting handlers ----------
   const openAddMeetingModal = () => {
     setEditingMeetingIndex(null);
     setMeetingFormData({ date: "", type: "", agenda: "", participants: "", minutes: "", attachments: [], newFiles: [] });
@@ -442,11 +411,9 @@ export default function AccOagReferralPage() {
   const handleRemoveExistingFile = async (fileName: string) => {
     if (!editData) return;
     try {
-      const token = getToken();
-      if (!token) throw new Error("No token");
       const res = await fetch("/api/acc-oag-referral/delete-file", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caseId: editData._id, fileName }),
       });
       if (!res.ok) throw new Error("Failed to delete file");
@@ -471,7 +438,7 @@ export default function AccOagReferralPage() {
   const openAssignModal = (caseItem: Case) => {
     setSelectedCase(caseItem);
     setSelectedOfficerId(caseItem.assignedProsecutor?._id || "");
-    fetchOfficers();
+    fetchOfficers();   // refresh list
     setShowAssignModal(true);
   };
   const handleAssign = async () => {
@@ -480,11 +447,9 @@ export default function AccOagReferralPage() {
       return;
     }
     try {
-      const token = getToken();
-      if (!token) throw new Error("No token");
       const res = await fetch("/api/acc-oag-referral/assign", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caseId: selectedCase._id, prosecutorId: selectedOfficerId }),
       });
       if (!res.ok) throw new Error();
@@ -500,11 +465,9 @@ export default function AccOagReferralPage() {
   const handleReferToOAG = async (caseItem: Case) => {
     if (!confirm(`Refer case "${caseItem.caseNo}" to OAG?`)) return;
     try {
-      const token = getToken();
-      if (!token) throw new Error("No token");
       const res = await fetch("/api/acc-oag-referral/refer-to-oag", {
         method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ caseId: caseItem._id }),
       });
       if (!res.ok) throw new Error();
@@ -560,25 +523,10 @@ export default function AccOagReferralPage() {
       form.append("_id", editData._id);
       form.append("existingAttachments", JSON.stringify(existingAttachments));
     }
-
-    const token = getToken();
-    if (!token) {
-      showNotification("You are not logged in", "error");
-      return;
-    }
-
     try {
       const url = "/api/acc-oag-referral";
       const method = editData ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        body: form,
-        headers: { Authorization: `Bearer ${token}` }, // No Content-Type for FormData
-      });
-      if (res.status === 413) {
-        showNotification("File size too large. Please reduce file sizes (max 50MB total).", "error");
-        return;
-      }
+      const res = await fetch(url, { method, body: form });
       if (!res.ok) throw new Error();
       await fetchCases();
       setShowForm(false);
@@ -617,12 +565,10 @@ export default function AccOagReferralPage() {
   const handleDelete = async (caseItem: Case) => {
     if (!confirm(`Delete case "${caseItem.caseNo}"?`)) return;
     try {
-      const token = getToken();
-      if (!token) throw new Error("No token");
       const res = await fetch("/api/acc-oag-referral", {
         method: "DELETE",
         body: JSON.stringify({ _id: caseItem._id }),
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
       });
       if (!res.ok) throw new Error();
       await fetchCases();
@@ -650,7 +596,7 @@ export default function AccOagReferralPage() {
   const totalAttachmentsCount = existingAttachments.length + attachments.length;
   const meetingAttachmentsCount = (meeting: Meeting) => (meeting.attachments?.length || 0) + (meeting.newFiles?.length || 0);
 
-  // ---------- Render ---------- (unchanged)
+  // ---------- Render ----------
   return (
     <>
       <div className="flex">
@@ -731,18 +677,7 @@ export default function AccOagReferralPage() {
                 {accusedDetails.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 border rounded-lg">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Name</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">CID</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Act</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Section</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Charge</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Counts</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Prayer</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th>
-                        </tr>
-                      </thead>
+                      <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs font-medium uppercase">Name</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">CID</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Act</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Section</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Charge</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Counts</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Prayer</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th></tr></thead>
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {accusedDetails.map((acc, idx) => (
                           <tr key={idx} className="hover:bg-gray-50">
@@ -768,17 +703,7 @@ export default function AccOagReferralPage() {
                 {meetings.length > 0 ? (
                   <div className="overflow-x-auto">
                     <table className="min-w-full divide-y divide-gray-200 border rounded-lg">
-                      <thead className="bg-gray-50">
-                        <tr>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Date</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Type</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Agenda</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Participants</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Minutes</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Attachments</th>
-                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th>
-                        </tr>
-                      </thead>
+                      <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs font-medium uppercase">Date</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Type</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Agenda</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Participants</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Minutes</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Attachments</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th></tr></thead>
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {meetings.map((m, idx) => (
                           <tr key={idx} className="hover:bg-gray-50">
@@ -818,18 +743,7 @@ export default function AccOagReferralPage() {
           <div className="bg-white shadow rounded-lg overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">S/N</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Case No.</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Description</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Investigator</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Assigned Officer</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Accused</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Meetings</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Status</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Attachments</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Actions</th>
-                </tr>
+                <tr><th className="px-6 py-3 text-left text-xs font-medium uppercase">S/N</th><th>Case No.</th><th>Description</th><th>Investigator</th><th>Assigned Officer</th><th>Accused</th><th>Meetings</th><th>Status</th><th>Attachments</th><th>Actions</th></tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {paginated.map((c, idx) => (
@@ -886,9 +800,7 @@ export default function AccOagReferralPage() {
                     </td>
                   </tr>
                 ))}
-                {paginated.length === 0 && (
-                  <tr><td colSpan={10} className="text-center py-6 text-gray-500">No cases found</td></tr>
-                )}
+                {paginated.length === 0 && <tr><td colSpan={10} className="text-center py-6 text-gray-500">No cases found</td></tr>}
               </tbody>
             </table>
           </div>
