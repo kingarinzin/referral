@@ -259,21 +259,12 @@ export default function Sidebar() {
                 <Shield size={18} /> <span className="flex-1 text-left">Acc-Raa Referral</span>
               </button>
             )}
-
             {/* Only OAG agency admins see the Acc-Oag-Referral page */}
             {isOagAgency && isAgencyAdminUser && (
               <button onClick={() => router.push("/admin/acc-oag-referral")} className={navButtonClass(pathname.startsWith("/admin/acc-oag-referral"))}>
                 <Shield size={18} /> <span className="flex-1 text-left">Acc-Oag-Referral</span>
               </button>
             )}
-
-            {/* NEW: Normal OAG officers (non‑agency‑admin) see "My Assigned Cases" */}
-            {isOagAgency && !isAgencyAdminUser && (
-              <button onClick={() => router.push("/admin/acc-oag-referral/prosecutor-cases")} className={navButtonClass(pathname === "/admin/acc-oag-referral/prosecutor-cases")}>
-                <Shield size={18} /> <span className="flex-1 text-left">My Assigned Cases</span>
-              </button>
-            )}
-
             {/* OAG agency admin gets Pending Approvals AND All Users */}
             {isOagAgency && isAgencyAdminUser && (
               <>
@@ -285,7 +276,6 @@ export default function Sidebar() {
                 </button>
               </>
             )}
-
             <button onClick={() => router.push("/settings")} className={navButtonClass(pathname === "/settings")}>
               <Settings size={18} /> Settings
             </button>

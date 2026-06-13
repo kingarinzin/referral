@@ -7,20 +7,39 @@ export async function POST(req) {
     const client = await clientPromise;
     const db = client.db('referral_db');
     const { caseId, prosecutorId } = await req.json();
+
     if (!caseId || !prosecutorId) {
       return NextResponse.json({ error: 'caseId and prosecutorId required' }, { status: 400 });
     }
-    const prosecutor = await db.collection('users').findOne(
-      { _id: new ObjectId(prosecutorId), role: 'Prosecutor' },
+
+    // Find the officer (role = 'Officer')
+    const officer = await db.collection('users').findOne(
+      { _id: new ObjectId(prosecutorId), role: 'Officer' },
       { projection: { name: 1, email: 1 } }
     );
-    if (!prosecutor) {
-      return NextResponse.json({ error: 'Prosecutor not found' }, { status: 404 });
+
+    if (!officer) {
+      return NextResponse.json({ error: 'Officer not found' }, { status: 404 });
     }
-    await db.collection('acc_oag_referral').updateOne(
+
+    // ✅ Use the correct collection name: 'accoagreferrals'
+    const result = await db.collection('accoagreferrals').updateOne(
       { _id: new ObjectId(caseId) },
-      { $set: { assignedProsecutor: { _id: prosecutor._id.toString(), name: prosecutor.name, email: prosecutor.email } } }
+      {
+        $set: {
+          assignedProsecutor: {
+            _id: officer._id.toString(),
+            name: officer.name,
+            email: officer.email,
+          },
+        },
+      }
     );
+
+    if (result.matchedCount === 0) {
+      return NextResponse.json({ error: 'Case not found' }, { status: 404 });
+    }
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error('Assign error:', error);

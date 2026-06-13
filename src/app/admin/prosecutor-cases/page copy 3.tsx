@@ -1,17 +1,17 @@
 "use client";
 
 import { useState, useEffect, ChangeEvent } from "react";
-import { useRouter } from "next/navigation";   // ← ADDED
 import {
   Trash2, Pencil, Plus, X, Check, Upload, FileText, Eye, Download, Maximize2,
   UserPlus, UserCheck, Send
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
+// ==================== TYPES ====================
 type Act = { _id: string; name: string };
 type Section = { _id: string; name: string; actId: string };
 type Charge = { _id: string; name: string; sectionId: string };
-type Officer = { _id: string; name: string; email: string; role: string };
+type Prosecutor = { _id: string; name: string; email: string; role: string };
 
 type AccusedDetail = {
   _id?: string;
@@ -55,9 +55,8 @@ type Case = {
 
 type Notification = { message: string; type: "success" | "error" };
 
+// ==================== COMPONENT ====================
 export default function AccOagReferralPage() {
-  const router = useRouter();   // ← ADDED
-
   // ---------- State ----------
   const [cases, setCases] = useState<Case[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -67,7 +66,9 @@ export default function AccOagReferralPage() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [notification, setNotification] = useState<Notification | null>(null);
   const [selectedView, setSelectedView] = useState<{ title: string; data: string } | null>(null);
+  const [filterStatus, setFilterStatus] = useState("all");
 
+  // Form state
   const [formData, setFormData] = useState({
     caseNo: "",
     caseDescription: "",
@@ -81,40 +82,38 @@ export default function AccOagReferralPage() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<string[]>([]);
 
+  // Accused modal
   const [showAccusedModal, setShowAccusedModal] = useState(false);
   const [editingAccusedIndex, setEditingAccusedIndex] = useState<number | null>(null);
   const [accusedFormData, setAccusedFormData] = useState<AccusedDetail>({
     name: "", cid: "", actId: "", sectionId: "", chargeId: "", prayer: "", counts: 1,
   });
 
+  // Meeting modal
   const [showMeetingModal, setShowMeetingModal] = useState(false);
   const [editingMeetingIndex, setEditingMeetingIndex] = useState<number | null>(null);
   const [meetingFormData, setMeetingFormData] = useState<Meeting>({
     date: "", type: "", agenda: "", participants: "", minutes: "", attachments: [], newFiles: [],
   });
 
+  // Master data
   const [acts, setActs] = useState<Act[]>([]);
   const [sections, setSections] = useState<{ [actId: string]: Section[] }>({});
   const [charges, setCharges] = useState<{ [sectionId: string]: Charge[] }>({});
 
-  const [officers, setOfficers] = useState<Officer[]>([]);
+  // Assignment / user context
+  const [prosecutors, setProsecutors] = useState<Prosecutor[]>([]);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
-  const [selectedOfficerId, setSelectedOfficerId] = useState("");
+  const [selectedProsecutorId, setSelectedProsecutorId] = useState("");
   const [currentUserRole, setCurrentUserRole] = useState("");
   const [isAgencyAdmin, setIsAgencyAdmin] = useState(false);
   const [currentUserAgency, setCurrentUserAgency] = useState("");
-  const [oagAgencyId, setOagAgencyId] = useState<string>("");
-  const [isLoadingUser, setIsLoadingUser] = useState(true);   // ← ADDED
 
+  // Helper
   const getId = (val: string | { _id: string }): string => {
     if (typeof val === "string") return val;
     return val?._id || "";
-  };
-
-  const showNotification = (msg: string, type: "success" | "error" = "success") => {
-    setNotification({ message: msg, type });
-    setTimeout(() => setNotification(null), 3000);
   };
 
   // ---------- API calls ----------
@@ -160,125 +159,43 @@ export default function AccOagReferralPage() {
     } catch (error) { console.error("Failed to load charges"); }
   };
 
-  const deriveAgencyFromEmail = (email: string): string => {
-    if (!email) return "";
-    const domain = email.split("@")[1]?.toLowerCase();
-    if (domain?.includes("oag") || domain?.includes("attorneygeneral")) return "Office of the Attorney General";
-    if (domain?.includes("acc") || domain?.includes("anticorruption")) return "Anti-Corruption Commission";
-    return "";
-  };
-
-  // 🔍 DEBUG VERSION – logs everything
-  const fetchOfficers = async () => {
+  const fetchProsecutors = async () => {
     try {
-      console.log("=== fetchOfficers called ===");
-      if (oagAgencyId) {
-        console.log("Trying agencyId:", oagAgencyId);
-        const res = await fetch(`/api/users?role=Officer&agencyId=${oagAgencyId}`);
-        console.log("AgencyId fetch status:", res.status);
-        if (res.ok) {
-          const data = await res.json();
-          console.log("Officers by agencyId:", data);
-          if (data.length > 0) {
-            setOfficers(data);
-            return;
-          }
-        }
-      }
-      console.log("Falling back to /api/users?role=Officer (no agencyId)");
-      const res = await fetch("/api/users?role=Officer");
-      console.log("Fallback fetch status:", res.status);
+      const res = await fetch("/api/users?role=Prosecutor");
       if (res.ok) {
-        const allOfficers = await res.json();
-        console.log("All officers from API:", allOfficers);
-        const oagOfficers = allOfficers.filter((o: Officer) => 
-          deriveAgencyFromEmail(o.email) === "Office of the Attorney General"
-        );
-        console.log("Filtered OAG officers (by email):", oagOfficers);
-        setOfficers(oagOfficers);
-      } else {
-        console.error("Failed to fetch officers, status:", res.status);
+        const data = await res.json();
+        setProsecutors(data);
       }
-    } catch (error) {
-      console.error("Failed to load officers", error);
-    }
+    } catch (error) { console.error("Failed to load prosecutors"); }
   };
 
+  // ---------- User context ----------
   useEffect(() => {
     const token = localStorage.getItem("token");
-    let userEmailFromToken = "";
     if (token) {
       try {
         const payload = JSON.parse(atob(token.split(".")[1]));
         setCurrentUserRole(payload.role || "");
         setIsAgencyAdmin(payload.isAgencyAdmin === true);
-        userEmailFromToken = payload.email || "";
       } catch (e) { console.error(e); }
     }
-
     const fetchUserProfile = async () => {
       try {
         const res = await fetch("/api/user/profile");
         if (res.ok) {
           const profile = await res.json();
           setCurrentUserAgency(profile.agencyName || "");
-          if (profile.agencyId) setOagAgencyId(profile.agencyId);
-        } else if (userEmailFromToken) {
-          setCurrentUserAgency(deriveAgencyFromEmail(userEmailFromToken));
         }
-      } catch (e) {
-        if (userEmailFromToken) setCurrentUserAgency(deriveAgencyFromEmail(userEmailFromToken));
-      } finally {
-        setIsLoadingUser(false);   // ← ADDED
-      }
+      } catch (e) {}
     };
     fetchUserProfile();
     fetchCases();
     fetchActs();
   }, []);
 
-  useEffect(() => {
-    if (oagAgencyId) {
-      fetchOfficers();
-    }
-  }, [oagAgencyId]);
-
-  // ========== REDIRECT NORMAL OAG OFFICERS ==========   // ← ADDED
-  if (!isLoadingUser) {
-    const isNormalOagOfficer = !isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general") && currentUserRole === "Officer";
-    if (isNormalOagOfficer) {
-      router.replace("/admin/acc-oag-referral/prosecutor-cases");
-      return null;
-    }
-  }
-
-  // Show loading spinner while user data is being fetched   // ← ADDED
-  if (isLoadingUser) {
-    return (
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen flex items-center justify-center">
-          <div className="text-gray-500">Loading...</div>
-        </main>
-      </div>
-    );
-  }
-
+  // Role‑based button visibility
+  const canRefer = !isAgencyAdmin && currentUserRole !== "Admin" && currentUserAgency?.toLowerCase().includes("anti-corruption");
   const canAssign = isAgencyAdmin && currentUserRole !== "Admin";
-  const isOagAdmin = isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general");
-
-  const filteredCases = cases.filter(c => {
-    const matchesSearch = c.caseNo.toLowerCase().includes(search.toLowerCase()) ||
-      c.caseDescription.toLowerCase().includes(search.toLowerCase()) ||
-      c.investigatorName.toLowerCase().includes(search.toLowerCase());
-    if (!matchesSearch) return false;
-    if (isOagAdmin) return c.referredToOAG === true;
-    return true;
-  });
-
-  const totalPages = Math.ceil(filteredCases.length / rowsPerPage);
-  const start = (currentPage - 1) * rowsPerPage;
-  const paginated = filteredCases.slice(start, start + rowsPerPage);
 
   // ---------- Accused handlers ----------
   const openAddAccusedModal = () => {
@@ -286,6 +203,7 @@ export default function AccOagReferralPage() {
     setAccusedFormData({ name: "", cid: "", actId: "", sectionId: "", chargeId: "", prayer: "", counts: 1 });
     setShowAccusedModal(true);
   };
+
   const openEditAccusedModal = (index: number) => {
     const accused = accusedDetails[index];
     setEditingAccusedIndex(index);
@@ -301,6 +219,7 @@ export default function AccOagReferralPage() {
     if (sectionId) fetchChargesForSection(sectionId);
     setShowAccusedModal(true);
   };
+
   const saveAccused = () => {
     if (!accusedFormData.name || !accusedFormData.cid || !accusedFormData.actId || !accusedFormData.sectionId || !accusedFormData.chargeId) {
       showNotification("Please fill all required fields", "error");
@@ -317,6 +236,7 @@ export default function AccOagReferralPage() {
     }
     setShowAccusedModal(false);
   };
+
   const deleteAccused = (index: number) => {
     if (confirm("Remove this accused?")) {
       const updated = [...accusedDetails];
@@ -324,6 +244,7 @@ export default function AccOagReferralPage() {
       setAccusedDetails(updated);
     }
   };
+
   const handleAccusedFormChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setAccusedFormData(prev => ({ ...prev, [name]: value }));
@@ -343,6 +264,7 @@ export default function AccOagReferralPage() {
     setMeetingFormData({ date: "", type: "", agenda: "", participants: "", minutes: "", attachments: [], newFiles: [] });
     setShowMeetingModal(true);
   };
+
   const openEditMeetingModal = (index: number) => {
     const meeting = meetings[index];
     setEditingMeetingIndex(index);
@@ -353,21 +275,26 @@ export default function AccOagReferralPage() {
     });
     setShowMeetingModal(true);
   };
+
   const handleMeetingFormChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setMeetingFormData(prev => ({ ...prev, [name]: value }));
   };
+
   const handleMeetingFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length) setMeetingFormData(prev => ({ ...prev, newFiles: [...(prev.newFiles || []), ...files] }));
     e.target.value = "";
   };
+
   const removeMeetingNewFile = (index: number) => {
     setMeetingFormData(prev => ({ ...prev, newFiles: prev.newFiles?.filter((_, i) => i !== index) || [] }));
   };
+
   const removeMeetingExistingFile = (fileName: string) => {
     setMeetingFormData(prev => ({ ...prev, attachments: prev.attachments.filter(f => f !== fileName) }));
   };
+
   const saveMeeting = () => {
     if (!meetingFormData.date || !meetingFormData.type) {
       showNotification("Date and Type are required", "error");
@@ -393,6 +320,7 @@ export default function AccOagReferralPage() {
     }
     setShowMeetingModal(false);
   };
+
   const deleteMeeting = (index: number) => {
     if (confirm("Remove this meeting?")) {
       const updated = [...meetings];
@@ -401,13 +329,15 @@ export default function AccOagReferralPage() {
     }
   };
 
-  // ---------- File handlers ----------
+  // ---------- File handlers (case attachments) ----------
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length) setAttachments(prev => [...prev, ...files]);
     e.target.value = "";
   };
+
   const handleRemoveFile = (index: number) => setAttachments(prev => prev.filter((_, i) => i !== index));
+
   const handleRemoveExistingFile = async (fileName: string) => {
     if (!editData) return;
     try {
@@ -424,6 +354,7 @@ export default function AccOagReferralPage() {
       showNotification((error as Error).message, "error");
     }
   };
+
   const handleViewFile = (fileName: string) => window.open(`/uploads/acc-oag-referral/${fileName}`, "_blank");
   const handleDownloadFile = (fileName: string) => {
     const link = document.createElement("a");
@@ -437,24 +368,25 @@ export default function AccOagReferralPage() {
   // ---------- Assignment handlers ----------
   const openAssignModal = (caseItem: Case) => {
     setSelectedCase(caseItem);
-    setSelectedOfficerId(caseItem.assignedProsecutor?._id || "");
-    fetchOfficers();   // refresh list
+    setSelectedProsecutorId(caseItem.assignedProsecutor?._id || "");
+    fetchProsecutors();
     setShowAssignModal(true);
   };
+
   const handleAssign = async () => {
-    if (!selectedCase || !selectedOfficerId) {
-      showNotification("Please select an officer", "error");
+    if (!selectedCase || !selectedProsecutorId) {
+      showNotification("Please select a prosecutor", "error");
       return;
     }
     try {
       const res = await fetch("/api/acc-oag-referral/assign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseId: selectedCase._id, prosecutorId: selectedOfficerId }),
+        body: JSON.stringify({ caseId: selectedCase._id, prosecutorId: selectedProsecutorId }),
       });
       if (!res.ok) throw new Error();
       await fetchCases();
-      showNotification("Case assigned to officer successfully");
+      showNotification("Case assigned to prosecutor successfully");
       setShowAssignModal(false);
     } catch (error) {
       showNotification("Assignment failed", "error");
@@ -483,6 +415,7 @@ export default function AccOagReferralPage() {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
+
   const resetForm = () => {
     setEditData(null);
     setFormData({ caseNo: "", caseDescription: "", investigatorName: "", investigatorDesignation: "", investigatorContact: "", remarks: "" });
@@ -491,19 +424,23 @@ export default function AccOagReferralPage() {
     setAttachments([]);
     setExistingAttachments([]);
   };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.caseNo || !formData.caseDescription || !formData.investigatorName) {
       showNotification("Case No, Description, and Investigator are required", "error");
       return;
     }
+
     const accusedForApi = accusedDetails.map(acc => ({
       ...acc,
       actId: getId(acc.actId),
       sectionId: getId(acc.sectionId),
       chargeId: getId(acc.chargeId),
     }));
+
     const meetingsForApi = meetings.map(m => ({ ...m, newFiles: undefined }));
+
     const form = new FormData();
     form.append("caseNo", formData.caseNo);
     form.append("caseDescription", formData.caseDescription);
@@ -513,16 +450,19 @@ export default function AccOagReferralPage() {
     form.append("remarks", formData.remarks);
     form.append("accusedDetails", JSON.stringify(accusedForApi));
     form.append("meetings", JSON.stringify(meetingsForApi));
+
     attachments.forEach(file => form.append("attachments", file));
     meetings.forEach((meeting, idx) => {
       if (meeting.newFiles?.length) {
         meeting.newFiles.forEach(file => form.append(`meeting_attachments_${idx}`, file));
       }
     });
+
     if (editData) {
       form.append("_id", editData._id);
       form.append("existingAttachments", JSON.stringify(existingAttachments));
     }
+
     try {
       const url = "/api/acc-oag-referral";
       const method = editData ? "PUT" : "POST";
@@ -536,6 +476,7 @@ export default function AccOagReferralPage() {
       showNotification("Operation failed", "error");
     }
   };
+
   const handleEdit = (caseItem: Case) => {
     setEditData(caseItem);
     setFormData({
@@ -562,6 +503,7 @@ export default function AccOagReferralPage() {
     });
     setShowForm(true);
   };
+
   const handleDelete = async (caseItem: Case) => {
     if (!confirm(`Delete case "${caseItem.caseNo}"?`)) return;
     try {
@@ -578,6 +520,26 @@ export default function AccOagReferralPage() {
     }
   };
 
+  const showNotification = (msg: string, type: "success" | "error" = "success") => {
+    setNotification({ message: msg, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  // ---------- Filter & pagination ----------
+  const filteredCases = cases.filter(c => {
+    const matchesSearch = c.caseNo.toLowerCase().includes(search.toLowerCase()) ||
+      c.caseDescription.toLowerCase().includes(search.toLowerCase()) ||
+      c.investigatorName.toLowerCase().includes(search.toLowerCase());
+    if (!matchesSearch) return false;
+    if (filterStatus === "referred") return c.referredToOAG === true;
+    return true;
+  });
+
+  const totalPages = Math.ceil(filteredCases.length / rowsPerPage);
+  const start = (currentPage - 1) * rowsPerPage;
+  const paginated = filteredCases.slice(start, start + rowsPerPage);
+
+  // Helper display functions
   const getActName = (actId: string | Act) => {
     if (typeof actId === "object") return actId.name;
     const act = acts.find(a => a._id === actId);
@@ -618,6 +580,7 @@ export default function AccOagReferralPage() {
             </div>
           )}
 
+          {/* Create/Edit Form */}
           {showForm && (
             <form onSubmit={handleSubmit} className="bg-white shadow rounded-xl p-6 mb-6 space-y-6">
               <div className="flex justify-between items-center border-b pb-2">
@@ -680,14 +643,8 @@ export default function AccOagReferralPage() {
                       <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs font-medium uppercase">Name</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">CID</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Act</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Section</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Charge</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Counts</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Prayer</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th></tr></thead>
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {accusedDetails.map((acc, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 text-sm">{acc.name}</td>
-                            <td className="px-4 py-2 text-sm">{acc.cid}</td>
-                            <td className="px-4 py-2 text-sm">{getActName(acc.actId)}</td>
-                            <td className="px-4 py-2 text-sm">{getSectionName(acc.sectionId)}</td>
-                            <td className="px-4 py-2 text-sm">{getChargeName(acc.chargeId)}</td>
-                            <td className="px-4 py-2 text-sm">{acc.counts}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{acc.prayer}</td>
+                          <tr key={idx}>
+                            <td className="px-4 py-2 text-sm">{acc.name}</td><td className="px-4 py-2 text-sm">{acc.cid}</td><td className="px-4 py-2 text-sm">{getActName(acc.actId)}</td><td className="px-4 py-2 text-sm">{getSectionName(acc.sectionId)}</td><td className="px-4 py-2 text-sm">{getChargeName(acc.chargeId)}</td><td className="px-4 py-2 text-sm">{acc.counts}</td><td className="px-4 py-2 text-sm max-w-xs truncate">{acc.prayer}</td>
                             <td className="px-4 py-2 text-sm flex gap-2"><button type="button" onClick={() => openEditAccusedModal(idx)} className="text-blue-500"><Pencil size={14} /></button><button type="button" onClick={() => deleteAccused(idx)} className="text-red-500"><Trash2 size={14} /></button></td>
                           </tr>
                         ))}
@@ -706,12 +663,8 @@ export default function AccOagReferralPage() {
                       <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs font-medium uppercase">Date</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Type</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Agenda</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Participants</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Minutes</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Attachments</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th></tr></thead>
                       <tbody className="divide-y divide-gray-200 bg-white">
                         {meetings.map((m, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 text-sm">{new Date(m.date).toLocaleDateString()}</td>
-                            <td className="px-4 py-2 text-sm">{m.type}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.agenda}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.participants}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.minutes}</td>
+                          <tr key={idx}>
+                            <td className="px-4 py-2 text-sm">{new Date(m.date).toLocaleDateString()}</td><td className="px-4 py-2 text-sm">{m.type}</td><td className="px-4 py-2 text-sm max-w-xs truncate">{m.agenda}</td><td className="px-4 py-2 text-sm max-w-xs truncate">{m.participants}</td><td className="px-4 py-2 text-sm max-w-xs truncate">{m.minutes}</td>
                             <td className="px-4 py-2 text-sm">{meetingAttachmentsCount(m) > 0 ? <span className="text-xs text-blue-600">{meetingAttachmentsCount(m)} file(s)</span> : <span className="text-gray-400">-</span>}</td>
                             <td className="px-4 py-2 text-sm flex gap-2"><button type="button" onClick={() => openEditMeetingModal(idx)} className="text-blue-500"><Pencil size={14} /></button><button type="button" onClick={() => deleteMeeting(idx)} className="text-red-500"><Trash2 size={14} /></button></td>
                           </tr>
@@ -729,8 +682,15 @@ export default function AccOagReferralPage() {
             </form>
           )}
 
+          {/* Toolbar with search and filter */}
           <div className="flex justify-between items-center mb-4">
-            <input type="text" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} placeholder="Search by Case No., Description, Investigator..." className="w-80 px-4 py-2 border rounded focus:ring-2 focus:ring-blue-400 outline-none" />
+            <div className="flex gap-2">
+              <input type="text" value={search} onChange={(e) => { setSearch(e.target.value); setCurrentPage(1); }} placeholder="Search by Case No., Description, Investigator..." className="w-80 px-4 py-2 border rounded focus:ring-2 focus:ring-blue-400 outline-none" />
+              <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border rounded px-2 py-1 text-sm">
+                <option value="all">All Cases</option>
+                <option value="referred">Referred to OAG</option>
+              </select>
+            </div>
             <div className="flex items-center gap-2 text-sm">
               <span>Show</span>
               <select value={rowsPerPage} onChange={(e) => { setRowsPerPage(Number(e.target.value)); setCurrentPage(1); }} className="border rounded px-2 py-1">
@@ -740,62 +700,26 @@ export default function AccOagReferralPage() {
             </div>
           </div>
 
+          {/* Cases Table */}
           <div className="bg-white shadow rounded-lg overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
-                <tr><th className="px-6 py-3 text-left text-xs font-medium uppercase">S/N</th><th>Case No.</th><th>Description</th><th>Investigator</th><th>Assigned Officer</th><th>Accused</th><th>Meetings</th><th>Status</th><th>Attachments</th><th>Actions</th></tr>
-              </thead>
+                <tr><th className="px-6 py-3 text-left text-xs font-medium uppercase">S/N</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Case No.</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Description</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Investigator</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Assigned Prosecutor</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Accused</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Meetings</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Status</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Attachments</th><th className="px-6 py-3 text-left text-xs font-medium uppercase">Actions</th></tr></thead>
               <tbody className="divide-y divide-gray-200">
                 {paginated.map((c, idx) => (
                   <tr key={c._id} className="hover:bg-gray-100">
                     <td className="px-6 py-3 text-sm">{start + idx + 1}</td>
                     <td className="px-6 py-3 text-sm font-medium">{c.caseNo}</td>
-                    <td className="px-6 py-3 text-sm max-w-xs truncate">
-                      <div className="flex items-center gap-2">
-                        <span>{c.caseDescription.substring(0, 60)}</span>
-                        {c.caseDescription.length > 60 && (
-                          <button onClick={() => setSelectedView({ title: "Case Description", data: c.caseDescription })} className="text-blue-500"><Maximize2 size={14} /></button>
-                        )}
-                      </div>
-                    </td>
+                    <td className="px-6 py-3 text-sm max-w-xs truncate"><div className="flex items-center gap-2"><span>{c.caseDescription.substring(0, 60)}</span>{c.caseDescription.length > 60 && <button onClick={() => setSelectedView({ title: "Case Description", data: c.caseDescription })} className="text-blue-500"><Maximize2 size={14} /></button>}</div></td>
                     <td className="px-6 py-3 text-sm">{c.investigatorName}</td>
-                    <td className="px-6 py-3 text-sm">
-                      {c.assignedProsecutor?.name ? (
-                        <div className="flex items-center gap-1"><UserCheck size={14} className="text-green-600" /><span>{c.assignedProsecutor.name}</span></div>
-                      ) : (
-                        <span className="text-gray-400 text-xs">Not assigned</span>
-                      )}
-                    </td>
-                    <td className="px-6 py-3 text-sm">{c.accusedDetails?.length || 0}</td>
-                    <td className="px-6 py-3 text-sm">{c.meetings?.length || 0}</td>
-                    <td className="px-6 py-3 text-sm">
-                      <span className={`px-2 py-1 rounded text-xs ${c.referredToOAG ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
-                        {c.referredToOAG ? "Referred to OAG" : "Draft"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {c.attachments && c.attachments.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {c.attachments.slice(0,2).map((file,i) => (
-                            <div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
-                              <FileText size={12} className="text-gray-500" />
-                              <span className="text-xs truncate max-w-[80px]" title={file}>{file.length > 15 ? file.substring(0,15)+"..." : file}</span>
-                              <button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button>
-                              <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button>
-                            </div>
-                          ))}
-                          {c.attachments.length > 2 && <span className="text-xs text-gray-500">+{c.attachments.length-2}</span>}
-                        </div>
-                      ) : <span className="text-gray-400 text-xs">No files</span>}
-                    </td>
+                    <td className="px-6 py-3 text-sm">{c.assignedProsecutor?.name ? <div className="flex items-center gap-1"><UserCheck size={14} className="text-green-600" /><span>{c.assignedProsecutor.name}</span></div> : <span className="text-gray-400 text-xs">Not assigned</span>}</td>
+                    <td className="px-6 py-3 text-sm">{c.accusedDetails?.length || 0}</td><td className="px-6 py-3 text-sm">{c.meetings?.length || 0}</td>
+                    <td className="px-6 py-3 text-sm"><span className={`px-2 py-1 rounded text-xs ${c.referredToOAG ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>{c.referredToOAG ? "Referred to OAG" : "Draft"}</span></td>
+                    <td className="px-6 py-3 text-sm">{c.attachments && c.attachments.length > 0 ? (<div className="flex flex-wrap gap-2">{c.attachments.slice(0,2).map((file,i) => (<div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded"><FileText size={12} className="text-gray-500" /><span className="text-xs truncate max-w-[80px]" title={file}>{file.length > 15 ? file.substring(0,15)+"..." : file}</span><button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button><button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button></div>))}{c.attachments.length > 2 && <span className="text-xs text-gray-500">+{c.attachments.length-2}</span>}</div>) : <span className="text-gray-400 text-xs">No files</span>}</td>
                     <td className="px-6 py-3 text-sm flex gap-2">
                       <button onClick={() => handleEdit(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black"><Pencil size={12} /> Edit</button>
-                      {!isOagAdmin && !c.referredToOAG && (
-                        <button onClick={() => handleReferToOAG(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-blue-600"><Send size={12} /> Refer</button>
-                      )}
-                      {canAssign && c.referredToOAG && (
-                        <button onClick={() => openAssignModal(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black"><UserPlus size={12} /> Assign</button>
-                      )}
+                      {canRefer && !c.referredToOAG && <button onClick={() => handleReferToOAG(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-blue-600"><Send size={12} /> Refer</button>}
+                      {canAssign && c.referredToOAG && <button onClick={() => openAssignModal(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black"><UserPlus size={12} /> Assign</button>}
                       <button onClick={() => handleDelete(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-red-500"><Trash2 size={12} /> Delete</button>
                     </td>
                   </tr>
@@ -819,8 +743,8 @@ export default function AccOagReferralPage() {
       {showAssignModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="flex justify-between items-center p-6 border-b"><h3 className="text-xl font-semibold">Assign to Officer</h3><button onClick={() => setShowAssignModal(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button></div>
-            <div className="p-6"><p className="text-sm text-gray-600 mb-4">Case: <span className="font-medium">{selectedCase?.caseNo}</span></p><label className="block text-sm font-medium mb-1">Select Officer</label><select value={selectedOfficerId} onChange={(e) => setSelectedOfficerId(e.target.value)} className="w-full border rounded px-3 py-2"><option value="">-- Choose officer --</option>{officers.map(o => <option key={o._id} value={o._id}>{o.name} ({o.email})</option>)}</select></div>
+            <div className="flex justify-between items-center p-6 border-b"><h3 className="text-xl font-semibold">Assign Prosecutor</h3><button onClick={() => setShowAssignModal(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button></div>
+            <div className="p-6"><p className="text-sm text-gray-600 mb-4">Case: <span className="font-medium">{selectedCase?.caseNo}</span></p><label className="block text-sm font-medium mb-1">Select Prosecutor</label><select value={selectedProsecutorId} onChange={(e) => setSelectedProsecutorId(e.target.value)} className="w-full border rounded px-3 py-2"><option value="">-- Choose prosecutor --</option>{prosecutors.map(p => <option key={p._id} value={p._id}>{p.name} ({p.email})</option>)}</select></div>
             <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-xl"><button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border rounded-md">Cancel</button><button onClick={handleAssign} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Assign</button></div>
           </div>
         </div>

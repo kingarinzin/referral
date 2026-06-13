@@ -1,17 +1,17 @@
 "use client";
 
 import { useState, useEffect, ChangeEvent } from "react";
-import { useRouter } from "next/navigation";   // ← ADDED
 import {
   Trash2, Pencil, Plus, X, Check, Upload, FileText, Eye, Download, Maximize2,
   UserPlus, UserCheck, Send
 } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
+// Types
 type Act = { _id: string; name: string };
 type Section = { _id: string; name: string; actId: string };
 type Charge = { _id: string; name: string; sectionId: string };
-type Officer = { _id: string; name: string; email: string; role: string };
+type Prosecutor = { _id: string; name: string; email: string; role: string };
 
 type AccusedDetail = {
   _id?: string;
@@ -56,8 +56,6 @@ type Case = {
 type Notification = { message: string; type: "success" | "error" };
 
 export default function AccOagReferralPage() {
-  const router = useRouter();   // ← ADDED
-
   // ---------- State ----------
   const [cases, setCases] = useState<Case[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -68,6 +66,7 @@ export default function AccOagReferralPage() {
   const [notification, setNotification] = useState<Notification | null>(null);
   const [selectedView, setSelectedView] = useState<{ title: string; data: string } | null>(null);
 
+  // Form state
   const [formData, setFormData] = useState({
     caseNo: "",
     caseDescription: "",
@@ -81,32 +80,35 @@ export default function AccOagReferralPage() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<string[]>([]);
 
+  // Accused modal
   const [showAccusedModal, setShowAccusedModal] = useState(false);
   const [editingAccusedIndex, setEditingAccusedIndex] = useState<number | null>(null);
   const [accusedFormData, setAccusedFormData] = useState<AccusedDetail>({
     name: "", cid: "", actId: "", sectionId: "", chargeId: "", prayer: "", counts: 1,
   });
 
+  // Meeting modal
   const [showMeetingModal, setShowMeetingModal] = useState(false);
   const [editingMeetingIndex, setEditingMeetingIndex] = useState<number | null>(null);
   const [meetingFormData, setMeetingFormData] = useState<Meeting>({
     date: "", type: "", agenda: "", participants: "", minutes: "", attachments: [], newFiles: [],
   });
 
+  // Master data
   const [acts, setActs] = useState<Act[]>([]);
   const [sections, setSections] = useState<{ [actId: string]: Section[] }>({});
   const [charges, setCharges] = useState<{ [sectionId: string]: Charge[] }>({});
 
-  const [officers, setOfficers] = useState<Officer[]>([]);
+  // Assignment / user context
+  const [prosecutors, setProsecutors] = useState<Prosecutor[]>([]);
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
-  const [selectedOfficerId, setSelectedOfficerId] = useState("");
+  const [selectedProsecutorId, setSelectedProsecutorId] = useState("");
   const [currentUserRole, setCurrentUserRole] = useState("");
   const [isAgencyAdmin, setIsAgencyAdmin] = useState(false);
   const [currentUserAgency, setCurrentUserAgency] = useState("");
-  const [oagAgencyId, setOagAgencyId] = useState<string>("");
-  const [isLoadingUser, setIsLoadingUser] = useState(true);   // ← ADDED
 
+  // Helper
   const getId = (val: string | { _id: string }): string => {
     if (typeof val === "string") return val;
     return val?._id || "";
@@ -160,48 +162,19 @@ export default function AccOagReferralPage() {
     } catch (error) { console.error("Failed to load charges"); }
   };
 
+  const fetchProsecutors = async () => {
+    try {
+      const res = await fetch("/api/users?role=Prosecutor");
+      if (res.ok) setProsecutors(await res.json());
+    } catch (error) { console.error("Failed to load prosecutors"); }
+  };
+
   const deriveAgencyFromEmail = (email: string): string => {
     if (!email) return "";
     const domain = email.split("@")[1]?.toLowerCase();
     if (domain?.includes("oag") || domain?.includes("attorneygeneral")) return "Office of the Attorney General";
     if (domain?.includes("acc") || domain?.includes("anticorruption")) return "Anti-Corruption Commission";
     return "";
-  };
-
-  // 🔍 DEBUG VERSION – logs everything
-  const fetchOfficers = async () => {
-    try {
-      console.log("=== fetchOfficers called ===");
-      if (oagAgencyId) {
-        console.log("Trying agencyId:", oagAgencyId);
-        const res = await fetch(`/api/users?role=Officer&agencyId=${oagAgencyId}`);
-        console.log("AgencyId fetch status:", res.status);
-        if (res.ok) {
-          const data = await res.json();
-          console.log("Officers by agencyId:", data);
-          if (data.length > 0) {
-            setOfficers(data);
-            return;
-          }
-        }
-      }
-      console.log("Falling back to /api/users?role=Officer (no agencyId)");
-      const res = await fetch("/api/users?role=Officer");
-      console.log("Fallback fetch status:", res.status);
-      if (res.ok) {
-        const allOfficers = await res.json();
-        console.log("All officers from API:", allOfficers);
-        const oagOfficers = allOfficers.filter((o: Officer) => 
-          deriveAgencyFromEmail(o.email) === "Office of the Attorney General"
-        );
-        console.log("Filtered OAG officers (by email):", oagOfficers);
-        setOfficers(oagOfficers);
-      } else {
-        console.error("Failed to fetch officers, status:", res.status);
-      }
-    } catch (error) {
-      console.error("Failed to load officers", error);
-    }
   };
 
   useEffect(() => {
@@ -222,14 +195,11 @@ export default function AccOagReferralPage() {
         if (res.ok) {
           const profile = await res.json();
           setCurrentUserAgency(profile.agencyName || "");
-          if (profile.agencyId) setOagAgencyId(profile.agencyId);
         } else if (userEmailFromToken) {
           setCurrentUserAgency(deriveAgencyFromEmail(userEmailFromToken));
         }
       } catch (e) {
         if (userEmailFromToken) setCurrentUserAgency(deriveAgencyFromEmail(userEmailFromToken));
-      } finally {
-        setIsLoadingUser(false);   // ← ADDED
       }
     };
     fetchUserProfile();
@@ -237,36 +207,11 @@ export default function AccOagReferralPage() {
     fetchActs();
   }, []);
 
-  useEffect(() => {
-    if (oagAgencyId) {
-      fetchOfficers();
-    }
-  }, [oagAgencyId]);
-
-  // ========== REDIRECT NORMAL OAG OFFICERS ==========   // ← ADDED
-  if (!isLoadingUser) {
-    const isNormalOagOfficer = !isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general") && currentUserRole === "Officer";
-    if (isNormalOagOfficer) {
-      router.replace("/admin/acc-oag-referral/prosecutor-cases");
-      return null;
-    }
-  }
-
-  // Show loading spinner while user data is being fetched   // ← ADDED
-  if (isLoadingUser) {
-    return (
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen flex items-center justify-center">
-          <div className="text-gray-500">Loading...</div>
-        </main>
-      </div>
-    );
-  }
-
   const canAssign = isAgencyAdmin && currentUserRole !== "Admin";
   const isOagAdmin = isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general");
+  console.log("OAG Admin Debug:", { isOagAdmin, isAgencyAdmin, currentUserAgency });
 
+  // Filter: OAG admin sees only referred cases
   const filteredCases = cases.filter(c => {
     const matchesSearch = c.caseNo.toLowerCase().includes(search.toLowerCase()) ||
       c.caseDescription.toLowerCase().includes(search.toLowerCase()) ||
@@ -437,24 +382,24 @@ export default function AccOagReferralPage() {
   // ---------- Assignment handlers ----------
   const openAssignModal = (caseItem: Case) => {
     setSelectedCase(caseItem);
-    setSelectedOfficerId(caseItem.assignedProsecutor?._id || "");
-    fetchOfficers();   // refresh list
+    setSelectedProsecutorId(caseItem.assignedProsecutor?._id || "");
+    fetchProsecutors();
     setShowAssignModal(true);
   };
   const handleAssign = async () => {
-    if (!selectedCase || !selectedOfficerId) {
-      showNotification("Please select an officer", "error");
+    if (!selectedCase || !selectedProsecutorId) {
+      showNotification("Please select a prosecutor", "error");
       return;
     }
     try {
       const res = await fetch("/api/acc-oag-referral/assign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ caseId: selectedCase._id, prosecutorId: selectedOfficerId }),
+        body: JSON.stringify({ caseId: selectedCase._id, prosecutorId: selectedProsecutorId }),
       });
       if (!res.ok) throw new Error();
       await fetchCases();
-      showNotification("Case assigned to officer successfully");
+      showNotification("Case assigned to prosecutor successfully");
       setShowAssignModal(false);
     } catch (error) {
       showNotification("Assignment failed", "error");
@@ -578,6 +523,7 @@ export default function AccOagReferralPage() {
     }
   };
 
+  // Helper display functions
   const getActName = (actId: string | Act) => {
     if (typeof actId === "object") return actId.name;
     const act = acts.find(a => a._id === actId);
@@ -602,7 +548,6 @@ export default function AccOagReferralPage() {
       <div className="flex">
         <Sidebar />
         <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen">
-          {/* Header */}
           <div className="flex justify-between items-center mb-6">
             <h1 className="text-2xl font-bold">ACC / OAG Referral Cases</h1>
             {!showForm && (
@@ -624,7 +569,6 @@ export default function AccOagReferralPage() {
                 <h2 className="text-lg font-semibold">{editData ? "Edit Case" : "New Case"}</h2>
                 <button type="button" onClick={() => setShowForm(false)} className="text-gray-500 hover:text-black">✕</button>
               </div>
-
               <div className="grid md:grid-cols-2 gap-4">
                 <div><label className="text-sm font-medium">Case No. *</label><input name="caseNo" value={formData.caseNo} onChange={handleFormChange} className="w-full border rounded px-3 py-2" required /></div>
                 <div><label className="text-sm font-medium">Investigator Name *</label><input name="investigatorName" value={formData.investigatorName} onChange={handleFormChange} className="w-full border rounded px-3 py-2" required /></div>
@@ -675,25 +619,23 @@ export default function AccOagReferralPage() {
               <div className="border-t pt-4">
                 <div className="flex justify-between items-center mb-3"><h3 className="font-semibold">Accused Details</h3><button type="button" onClick={openAddAccusedModal} className="flex items-center gap-1 text-xs border rounded px-2 py-1 hover:border-black"><Plus size={12} /> Add Accused</button></div>
                 {accusedDetails.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 border rounded-lg">
-                      <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs font-medium uppercase">Name</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">CID</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Act</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Section</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Charge</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Counts</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Prayer</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th></tr></thead>
-                      <tbody className="divide-y divide-gray-200 bg-white">
-                        {accusedDetails.map((acc, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 text-sm">{acc.name}</td>
-                            <td className="px-4 py-2 text-sm">{acc.cid}</td>
-                            <td className="px-4 py-2 text-sm">{getActName(acc.actId)}</td>
-                            <td className="px-4 py-2 text-sm">{getSectionName(acc.sectionId)}</td>
-                            <td className="px-4 py-2 text-sm">{getChargeName(acc.chargeId)}</td>
-                            <td className="px-4 py-2 text-sm">{acc.counts}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{acc.prayer}</td>
-                            <td className="px-4 py-2 text-sm flex gap-2"><button type="button" onClick={() => openEditAccusedModal(idx)} className="text-blue-500"><Pencil size={14} /></button><button type="button" onClick={() => deleteAccused(idx)} className="text-red-500"><Trash2 size={14} /></button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <table className="min-w-full divide-y divide-gray-200 border rounded-lg">
+                    <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs font-medium uppercase">Name</th><th>CID</th><th>Act</th><th>Section</th><th>Charge</th><th>Counts</th><th>Prayer</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {accusedDetails.map((acc, idx) => (
+                        <tr key={idx}>
+                          <td className="px-4 py-2 text-sm">{acc.name}</td>
+                          <td className="px-4 py-2 text-sm">{acc.cid}</td>
+                          <td className="px-4 py-2 text-sm">{getActName(acc.actId)}</td>
+                          <td className="px-4 py-2 text-sm">{getSectionName(acc.sectionId)}</td>
+                          <td className="px-4 py-2 text-sm">{getChargeName(acc.chargeId)}</td>
+                          <td className="px-4 py-2 text-sm">{acc.counts}</td>
+                          <td className="px-4 py-2 text-sm max-w-xs truncate">{acc.prayer}</td>
+                          <td className="px-4 py-2 text-sm flex gap-2"><button type="button" onClick={() => openEditAccusedModal(idx)}><Pencil size={14} /></button><button type="button" onClick={() => deleteAccused(idx)}><Trash2 size={14} /></button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 ) : <p className="text-gray-400 text-sm">No accused added. Click "Add Accused".</p>}
               </div>
 
@@ -701,24 +643,22 @@ export default function AccOagReferralPage() {
               <div className="border-t pt-4">
                 <div className="flex justify-between items-center mb-3"><h3 className="font-semibold">Meetings</h3><button type="button" onClick={openAddMeetingModal} className="flex items-center gap-1 text-xs border rounded px-2 py-1 hover:border-black"><Plus size={12} /> Add Meeting</button></div>
                 {meetings.length > 0 ? (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full divide-y divide-gray-200 border rounded-lg">
-                      <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs font-medium uppercase">Date</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Type</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Agenda</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Participants</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Minutes</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Attachments</th><th className="px-4 py-2 text-left text-xs font-medium uppercase">Actions</th></tr></thead>
-                      <tbody className="divide-y divide-gray-200 bg-white">
-                        {meetings.map((m, idx) => (
-                          <tr key={idx} className="hover:bg-gray-50">
-                            <td className="px-4 py-2 text-sm">{new Date(m.date).toLocaleDateString()}</td>
-                            <td className="px-4 py-2 text-sm">{m.type}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.agenda}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.participants}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.minutes}</td>
-                            <td className="px-4 py-2 text-sm">{meetingAttachmentsCount(m) > 0 ? <span className="text-xs text-blue-600">{meetingAttachmentsCount(m)} file(s)</span> : <span className="text-gray-400">-</span>}</td>
-                            <td className="px-4 py-2 text-sm flex gap-2"><button type="button" onClick={() => openEditMeetingModal(idx)} className="text-blue-500"><Pencil size={14} /></button><button type="button" onClick={() => deleteMeeting(idx)} className="text-red-500"><Trash2 size={14} /></button></td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
+                  <table className="min-w-full divide-y divide-gray-200 border rounded-lg">
+                    <thead className="bg-gray-50"><tr><th>Date</th><th>Type</th><th>Agenda</th><th>Participants</th><th>Minutes</th><th>Attachments</th><th>Actions</th></tr></thead>
+                    <tbody>
+                      {meetings.map((m, idx) => (
+                        <tr key={idx}>
+                          <td className="px-4 py-2 text-sm">{new Date(m.date).toLocaleDateString()}</td>
+                          <td className="px-4 py-2 text-sm">{m.type}</td>
+                          <td className="px-4 py-2 text-sm max-w-xs truncate">{m.agenda}</td>
+                          <td className="px-4 py-2 text-sm max-w-xs truncate">{m.participants}</td>
+                          <td className="px-4 py-2 text-sm max-w-xs truncate">{m.minutes}</td>
+                          <td className="px-4 py-2 text-sm">{meetingAttachmentsCount(m) > 0 ? meetingAttachmentsCount(m) + " file(s)" : "-"}</td>
+                          <td className="px-4 py-2 text-sm flex gap-2"><button type="button" onClick={() => openEditMeetingModal(idx)}><Pencil size={14} /></button><button type="button" onClick={() => deleteMeeting(idx)}><Trash2 size={14} /></button></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 ) : <p className="text-gray-400 text-sm">No meetings added. Click "Add Meeting".</p>}
               </div>
 
@@ -743,51 +683,31 @@ export default function AccOagReferralPage() {
           <div className="bg-white shadow rounded-lg overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
-                <tr><th className="px-6 py-3 text-left text-xs font-medium uppercase">S/N</th><th>Case No.</th><th>Description</th><th>Investigator</th><th>Assigned Officer</th><th>Accused</th><th>Meetings</th><th>Status</th><th>Attachments</th><th>Actions</th></tr>
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">S/N</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Case No.</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Description</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Investigator</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Assigned Prosecutor</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Accused</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Meetings</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Status</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Attachments</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium uppercase">Actions</th>
+                </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {paginated.map((c, idx) => (
                   <tr key={c._id} className="hover:bg-gray-100">
                     <td className="px-6 py-3 text-sm">{start + idx + 1}</td>
                     <td className="px-6 py-3 text-sm font-medium">{c.caseNo}</td>
-                    <td className="px-6 py-3 text-sm max-w-xs truncate">
-                      <div className="flex items-center gap-2">
-                        <span>{c.caseDescription.substring(0, 60)}</span>
-                        {c.caseDescription.length > 60 && (
-                          <button onClick={() => setSelectedView({ title: "Case Description", data: c.caseDescription })} className="text-blue-500"><Maximize2 size={14} /></button>
-                        )}
-                      </div>
-                    </td>
+                    <td className="px-6 py-3 text-sm max-w-xs truncate"><div className="flex items-center gap-2"><span>{c.caseDescription.substring(0, 60)}</span>{c.caseDescription.length > 60 && <button onClick={() => setSelectedView({ title: "Case Description", data: c.caseDescription })} className="text-blue-500"><Maximize2 size={14} /></button>}</div></td>
                     <td className="px-6 py-3 text-sm">{c.investigatorName}</td>
-                    <td className="px-6 py-3 text-sm">
-                      {c.assignedProsecutor?.name ? (
-                        <div className="flex items-center gap-1"><UserCheck size={14} className="text-green-600" /><span>{c.assignedProsecutor.name}</span></div>
-                      ) : (
-                        <span className="text-gray-400 text-xs">Not assigned</span>
-                      )}
-                    </td>
+                    <td className="px-6 py-3 text-sm">{c.assignedProsecutor?.name ? <div className="flex items-center gap-1"><UserCheck size={14} className="text-green-600" /><span>{c.assignedProsecutor.name}</span></div> : <span className="text-gray-400 text-xs">Not assigned</span>}</td>
                     <td className="px-6 py-3 text-sm">{c.accusedDetails?.length || 0}</td>
                     <td className="px-6 py-3 text-sm">{c.meetings?.length || 0}</td>
-                    <td className="px-6 py-3 text-sm">
-                      <span className={`px-2 py-1 rounded text-xs ${c.referredToOAG ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
-                        {c.referredToOAG ? "Referred to OAG" : "Draft"}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 text-sm">
-                      {c.attachments && c.attachments.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {c.attachments.slice(0,2).map((file,i) => (
-                            <div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
-                              <FileText size={12} className="text-gray-500" />
-                              <span className="text-xs truncate max-w-[80px]" title={file}>{file.length > 15 ? file.substring(0,15)+"..." : file}</span>
-                              <button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button>
-                              <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button>
-                            </div>
-                          ))}
-                          {c.attachments.length > 2 && <span className="text-xs text-gray-500">+{c.attachments.length-2}</span>}
-                        </div>
-                      ) : <span className="text-gray-400 text-xs">No files</span>}
-                    </td>
+                    <td className="px-6 py-3 text-sm"><span className={`px-2 py-1 rounded text-xs ${c.referredToOAG ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>{c.referredToOAG ? "Referred to OAG" : "Draft"}</span></td>
+                    <td className="px-6 py-3 text-sm">{c.attachments && c.attachments.length > 0 ? (<div className="flex flex-wrap gap-2">{c.attachments.slice(0,2).map((file,i) => (<div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded"><FileText size={12} className="text-gray-500" /><span className="text-xs truncate max-w-[80px]" title={file}>{file.length > 15 ? file.substring(0,15)+"..." : file}</span><button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button><button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button></div>))}{c.attachments.length > 2 && <span className="text-xs text-gray-500">+{c.attachments.length-2}</span>}</div>) : <span className="text-gray-400 text-xs">No files</span>}</td>
                     <td className="px-6 py-3 text-sm flex gap-2">
                       <button onClick={() => handleEdit(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black"><Pencil size={12} /> Edit</button>
                       {!isOagAdmin && !c.referredToOAG && (
@@ -800,7 +720,9 @@ export default function AccOagReferralPage() {
                     </td>
                   </tr>
                 ))}
-                {paginated.length === 0 && <tr><td colSpan={10} className="text-center py-6 text-gray-500">No cases found</td></tr>}
+                {paginated.length === 0 && (
+                  <tr><td colSpan={10} className="text-center py-6 text-gray-500">No cases found</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -819,8 +741,8 @@ export default function AccOagReferralPage() {
       {showAssignModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
-            <div className="flex justify-between items-center p-6 border-b"><h3 className="text-xl font-semibold">Assign to Officer</h3><button onClick={() => setShowAssignModal(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button></div>
-            <div className="p-6"><p className="text-sm text-gray-600 mb-4">Case: <span className="font-medium">{selectedCase?.caseNo}</span></p><label className="block text-sm font-medium mb-1">Select Officer</label><select value={selectedOfficerId} onChange={(e) => setSelectedOfficerId(e.target.value)} className="w-full border rounded px-3 py-2"><option value="">-- Choose officer --</option>{officers.map(o => <option key={o._id} value={o._id}>{o.name} ({o.email})</option>)}</select></div>
+            <div className="flex justify-between items-center p-6 border-b"><h3 className="text-xl font-semibold">Assign Prosecutor</h3><button onClick={() => setShowAssignModal(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button></div>
+            <div className="p-6"><p className="text-sm text-gray-600 mb-4">Case: <span className="font-medium">{selectedCase?.caseNo}</span></p><label className="block text-sm font-medium mb-1">Select Prosecutor</label><select value={selectedProsecutorId} onChange={(e) => setSelectedProsecutorId(e.target.value)} className="w-full border rounded px-3 py-2"><option value="">-- Choose prosecutor --</option>{prosecutors.map(p => <option key={p._id} value={p._id}>{p.name} ({p.email})</option>)}</select></div>
             <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-xl"><button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border rounded-md">Cancel</button><button onClick={handleAssign} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Assign</button></div>
           </div>
         </div>

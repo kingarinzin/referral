@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, ChangeEvent } from "react";
-import { useRouter } from "next/navigation";   // ← ADDED
 import {
   Trash2, Pencil, Plus, X, Check, Upload, FileText, Eye, Download, Maximize2,
   UserPlus, UserCheck, Send
@@ -56,8 +55,6 @@ type Case = {
 type Notification = { message: string; type: "success" | "error" };
 
 export default function AccOagReferralPage() {
-  const router = useRouter();   // ← ADDED
-
   // ---------- State ----------
   const [cases, setCases] = useState<Case[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -105,7 +102,6 @@ export default function AccOagReferralPage() {
   const [isAgencyAdmin, setIsAgencyAdmin] = useState(false);
   const [currentUserAgency, setCurrentUserAgency] = useState("");
   const [oagAgencyId, setOagAgencyId] = useState<string>("");
-  const [isLoadingUser, setIsLoadingUser] = useState(true);   // ← ADDED
 
   const getId = (val: string | { _id: string }): string => {
     if (typeof val === "string") return val;
@@ -228,8 +224,6 @@ export default function AccOagReferralPage() {
         }
       } catch (e) {
         if (userEmailFromToken) setCurrentUserAgency(deriveAgencyFromEmail(userEmailFromToken));
-      } finally {
-        setIsLoadingUser(false);   // ← ADDED
       }
     };
     fetchUserProfile();
@@ -242,27 +236,6 @@ export default function AccOagReferralPage() {
       fetchOfficers();
     }
   }, [oagAgencyId]);
-
-  // ========== REDIRECT NORMAL OAG OFFICERS ==========   // ← ADDED
-  if (!isLoadingUser) {
-    const isNormalOagOfficer = !isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general") && currentUserRole === "Officer";
-    if (isNormalOagOfficer) {
-      router.replace("/admin/acc-oag-referral/prosecutor-cases");
-      return null;
-    }
-  }
-
-  // Show loading spinner while user data is being fetched   // ← ADDED
-  if (isLoadingUser) {
-    return (
-      <div className="flex">
-        <Sidebar />
-        <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen flex items-center justify-center">
-          <div className="text-gray-500">Loading...</div>
-        </main>
-      </div>
-    );
-  }
 
   const canAssign = isAgencyAdmin && currentUserRole !== "Admin";
   const isOagAdmin = isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general");
