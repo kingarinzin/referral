@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Eye, FileText, X, Upload } from "lucide-react";
+import { Eye, FileText, X } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 type Act = { _id: string; name: string };
@@ -29,15 +29,6 @@ type Meeting = {
   attachments: string[];
 };
 
-type CaseUpdate = {
-  _id?: string;
-  status: string;
-  reply: string;
-  attachments: string[];
-  updatedBy: { _id: string; name: string; email: string };
-  createdAt: string;
-};
-
 type Case = {
   _id: string;
   caseNo: string;
@@ -48,7 +39,6 @@ type Case = {
   attachments: string[];
   accusedDetails: AccusedDetail[];
   meetings: Meeting[];
-  updates?: CaseUpdate[];
   status: string;
   remarks: string;
   createdAt: string;
@@ -62,12 +52,6 @@ export default function ProsecutorCasesPage() {
   const [loading, setLoading] = useState(true);
   const [selectedCase, setSelectedCase] = useState<Case | null>(null);
   const [showModal, setShowModal] = useState(false);
-
-  // Update form state
-  const [updateStatus, setUpdateStatus] = useState("Ongoing");
-  const [updateReply, setUpdateReply] = useState("");
-  const [updateAttachments, setUpdateAttachments] = useState<File[]>([]);
-  const [submitting, setSubmitting] = useState(false);
 
   const getToken = () => localStorage.getItem("token");
 
@@ -97,61 +81,10 @@ export default function ProsecutorCasesPage() {
 
   const handleViewCase = (c: Case) => {
     setSelectedCase(c);
-    setUpdateStatus("Ongoing");
-    setUpdateReply("");
-    setUpdateAttachments([]);
     setShowModal(true);
   };
 
-  const handleSubmitUpdate = async () => {
-    if (!updateReply.trim()) {
-      alert("Please enter a reply");
-      return;
-    }
-    if (!selectedCase) return;
-    setSubmitting(true);
-    const formData = new FormData();
-    formData.append("caseId", selectedCase._id);
-    formData.append("status", updateStatus);
-    formData.append("reply", updateReply);
-    updateAttachments.forEach((f) => formData.append("attachments", f));
-
-    try {
-      const token = getToken();
-      const res = await fetch("/api/acc-oag-referral/add-update", {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || "Failed");
-      }
-      // Refresh the case list and re-fetch the selected case
-      await fetchCases();
-      const refreshed = cases.find((c) => c._id === selectedCase._id);
-      if (refreshed) {
-        const token2 = getToken();
-        const res2 = await fetch(`/api/acc-oag-referral?caseNo=${refreshed.caseNo}`, {
-          headers: { Authorization: `Bearer ${token2}` },
-        });
-        if (res2.ok) {
-          const [fresh] = await res2.json();
-          setSelectedCase(fresh);
-        }
-      }
-      alert("Update added successfully");
-      setUpdateReply("");
-      setUpdateAttachments([]);
-      setUpdateStatus("Ongoing");
-    } catch (err: any) {
-      alert(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleString();
+  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString();
 
   const getActName = (actId: string | Act) => {
     if (typeof actId === "object") return actId.name;
@@ -214,7 +147,7 @@ export default function ProsecutorCasesPage() {
                         onClick={() => handleViewCase(c)}
                         className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black"
                       >
-                        <Eye size={12} /> View & Update
+                        <Eye size={12} /> View Details
                       </button>
                     </td>
                   </tr>
@@ -225,18 +158,20 @@ export default function ProsecutorCasesPage() {
         )}
       </main>
 
-      {/* Modal: View Case + Add Update */}
+      {/* Read‑only Case Detail Modal */}
       {showModal && selectedCase && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md overflow-y-auto">
           <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
-              <h3 className="text-xl font-semibold">Case: {selectedCase.caseNo}</h3>
+              <h3 className="text-xl font-semibold">
+                Case: {selectedCase.caseNo}
+              </h3>
               <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-gray-700">
                 <X size={24} />
               </button>
             </div>
             <div className="p-6 space-y-6">
-              {/* Basic Info (read‑only) */}
+              {/* Basic Info */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div><label className="text-sm font-medium">Case No.</label><p className="mt-1">{selectedCase.caseNo}</p></div>
                 <div><label className="text-sm font-medium">Investigator</label><p className="mt-1">{selectedCase.investigatorName}</p></div>
@@ -246,7 +181,7 @@ export default function ProsecutorCasesPage() {
                 <div className="md:col-span-2"><label className="text-sm font-medium">Remarks</label><p className="mt-1">{selectedCase.remarks || "-"}</p></div>
               </div>
 
-              {/* Attachments (read‑only) */}
+              {/* Attachments */}
               {selectedCase.attachments && selectedCase.attachments.length > 0 && (
                 <div>
                   <h4 className="font-semibold mb-2">Attachments</h4>
@@ -269,7 +204,12 @@ export default function ProsecutorCasesPage() {
                   <div className="overflow-x-auto">
                     <table className="min-w-full border">
                       <thead className="bg-gray-50">
-                        <tr><th className="px-4 py-2 text-left text-xs">Name</th><th className="px-4 py-2 text-left text-xs">CID</th><th className="px-4 py-2 text-left text-xs">Act</th><th className="px-4 py-2 text-left text-xs">Section</th><th className="px-4 py-2 text-left text-xs">Charge</th><th className="px-4 py-2 text-left text-xs">Counts</th><th className="px-4 py-2 text-left text-xs">Prayer</th></tr>
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs">Name</th><th className="px-4 py-2 text-left text-xs">CID</th>
+                          <th className="px-4 py-2 text-left text-xs">Act</th><th className="px-4 py-2 text-left text-xs">Section</th>
+                          <th className="px-4 py-2 text-left text-xs">Charge</th><th className="px-4 py-2 text-left text-xs">Counts</th>
+                          <th className="px-4 py-2 text-left text-xs">Prayer</th>
+                        </tr>
                       </thead>
                       <tbody>
                         {selectedCase.accusedDetails.map((acc, idx) => (
@@ -295,16 +235,24 @@ export default function ProsecutorCasesPage() {
                   <h4 className="font-semibold mb-2">Meetings</h4>
                   <div className="overflow-x-auto">
                     <table className="min-w-full border">
-                      <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs">Date</th><th className="px-4 py-2 text-left text-xs">Type</th><th className="px-4 py-2 text-left text-xs">Agenda</th><th className="px-4 py-2 text-left text-xs">Participants</th><th className="px-4 py-2 text-left text-xs">Minutes</th><th className="px-4 py-2 text-left text-xs">Attachments</th></tr></thead>
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs">Date</th><th className="px-4 py-2 text-left text-xs">Type</th>
+                          <th className="px-4 py-2 text-left text-xs">Agenda</th><th className="px-4 py-2 text-left text-xs">Participants</th>
+                          <th className="px-4 py-2 text-left text-xs">Minutes</th><th className="px-4 py-2 text-left text-xs">Attachments</th>
+                        </tr>
+                      </thead>
                       <tbody>
                         {selectedCase.meetings.map((m, idx) => (
                           <tr key={idx} className="border-t">
-                            <td className="px-4 py-2 text-sm">{new Date(m.date).toLocaleDateString()}</td>
+                            <td className="px-4 py-2 text-sm">{formatDate(m.date)}</td>
                             <td className="px-4 py-2 text-sm">{m.type}</td>
                             <td className="px-4 py-2 text-sm max-w-xs truncate">{m.agenda}</td>
                             <td className="px-4 py-2 text-sm max-w-xs truncate">{m.participants}</td>
                             <td className="px-4 py-2 text-sm max-w-xs truncate">{m.minutes}</td>
-                            <td className="px-4 py-2 text-sm">{m.attachments?.length || 0} file(s)</td>
+                            <td className="px-4 py-2 text-sm">
+                              {m.attachments && m.attachments.length > 0 ? m.attachments.length + " file(s)" : "-"}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -312,80 +260,6 @@ export default function ProsecutorCasesPage() {
                   </div>
                 </div>
               )}
-
-              {/* Timeline of updates */}
-              {selectedCase.updates && selectedCase.updates.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-2">Case History</h4>
-                  <div className="space-y-3">
-                    {selectedCase.updates.map((upd, idx) => (
-                      <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded">
-                        <div className="flex justify-between">
-                          <span className="font-medium">Status: {upd.status}</span>
-                          <span className="text-xs text-gray-500">{formatDate(upd.createdAt)}</span>
-                        </div>
-                        <p className="text-sm mt-1">{upd.reply}</p>
-                        {upd.attachments?.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {upd.attachments.map((file) => (
-                              <a key={file} href={`/uploads/acc-oag-referral/${file}`} target="_blank" className="text-blue-500 text-xs flex items-center gap-1">📎 {file}</a>
-                            ))}
-                          </div>
-                        )}
-                        <div className="text-xs text-gray-400 mt-1">by {upd.updatedBy.name}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Form to add new update */}
-              <div className="border-t pt-4">
-                <h4 className="font-semibold mb-3">Add Case Update</h4>
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Status</label>
-                    <select
-                      value={updateStatus}
-                      onChange={(e) => setUpdateStatus(e.target.value)}
-                      className="w-full border rounded px-3 py-2"
-                    >
-                      <option value="Ongoing">Ongoing</option>
-                      <option value="Completed">Completed</option>
-                      <option value="Rejected">Rejected</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Reply / Remarks</label>
-                    <textarea
-                      rows={3}
-                      value={updateReply}
-                      onChange={(e) => setUpdateReply(e.target.value)}
-                      className="w-full border rounded px-3 py-2"
-                      placeholder="Enter your reply or progress update..."
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Attachments (optional)</label>
-                    <input
-                      type="file"
-                      multiple
-                      onChange={(e) => setUpdateAttachments(Array.from(e.target.files || []))}
-                      className="w-full"
-                    />
-                    {updateAttachments.length > 0 && (
-                      <div className="mt-2 text-xs text-gray-600">{updateAttachments.length} file(s) selected</div>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleSubmitUpdate}
-                    disabled={submitting}
-                    className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-400"
-                  >
-                    {submitting ? "Submitting..." : "Submit Update"}
-                  </button>
-                </div>
-              </div>
             </div>
             <div className="sticky bottom-0 bg-gray-50 p-4 text-right border-t">
               <button onClick={() => setShowModal(false)} className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700">

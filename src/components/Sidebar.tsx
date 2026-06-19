@@ -232,6 +232,10 @@ export default function Sidebar() {
               </div>
             )}
 
+            <button onClick={() => router.push("/admin/mop")} className={navButtonClass(pathname.startsWith("/admin/mop"))}>
+              <Shield size={18} /> <span className="flex-1 text-left">Missing of Person</span>
+            </button>
+
             <button onClick={() => router.push("/admin/acc-raa-referral")} className={navButtonClass(pathname.startsWith("/admin/acc-raa-referral"))}>
               <Shield size={18} /> <span className="flex-1 text-left">Acc-Raa Referral</span>
             </button>

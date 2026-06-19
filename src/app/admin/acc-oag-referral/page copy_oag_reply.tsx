@@ -36,15 +36,6 @@ type Meeting = {
   newFiles?: File[];
 };
 
-type CaseUpdate = {
-  _id?: string;
-  status: string;
-  reply: string;
-  attachments: string[];
-  updatedBy: { _id: string; name: string; email: string };
-  createdAt: string;
-};
-
 type Case = {
   _id: string;
   caseNo: string;
@@ -55,7 +46,6 @@ type Case = {
   attachments: string[];
   accusedDetails: AccusedDetail[];
   meetings: Meeting[];
-  updates?: CaseUpdate[];
   status: string;
   remarks: string;
   createdAt: string;
@@ -130,9 +120,6 @@ export default function AccOagReferralPage() {
   const [isLoadingUser, setIsLoadingUser] = useState(true);
   const [currentUserId, setCurrentUserId] = useState<string>("");
 
-  const [showReadOnlyModal, setShowReadOnlyModal] = useState(false);
-  const [readOnlyCase, setReadOnlyCase] = useState<Case | null>(null);
-
   const getId = (val: string | { _id: string }): string => {
     if (typeof val === "string") return val;
     return val?._id || "";
@@ -141,31 +128,6 @@ export default function AccOagReferralPage() {
   const showNotification = (msg: string, type: "success" | "error" = "success") => {
     setNotification({ message: msg, type });
     setTimeout(() => setNotification(null), 3000);
-  };
-
-  // ---------- Helper: get current case status from latest update ----------
-  const getCaseStatus = (caseItem: Case): { label: string; color: string } => {
-    if (caseItem.updates && caseItem.updates.length > 0) {
-      // Get the most recent update (by createdAt descending)
-      const latest = [...caseItem.updates].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      )[0];
-      const status = latest.status;
-      switch (status) {
-        case "Ongoing":
-          return { label: "Ongoing", color: "bg-blue-100 text-blue-800" };
-        case "Completed":
-          return { label: "Completed", color: "bg-green-100 text-green-800" };
-        case "Rejected":
-          return { label: "Rejected", color: "bg-red-100 text-red-800" };
-        default:
-          return { label: status, color: "bg-gray-100 text-gray-800" };
-      }
-    }
-    if (caseItem.referredToOAG) {
-      return { label: "Awaiting OAG", color: "bg-yellow-100 text-yellow-800" };
-    }
-    return { label: "Draft", color: "bg-gray-100 text-gray-800" };
   };
 
   // ---------- API calls (with token) ----------
@@ -332,7 +294,7 @@ export default function AccOagReferralPage() {
   const isOagAdmin = isAgencyAdmin && currentUserAgency?.toLowerCase().includes("attorney general");
   const isAccAgency = currentUserAgency?.toLowerCase().includes("anti-corruption") || currentUserAgency?.toLowerCase().includes("acc");
   const isAccNormalUser = isAccAgency && !isAgencyAdmin && currentUserRole !== "Admin";
-  const isAccAdmin = isAgencyAdmin && isAccAgency;
+  const isAccAdmin = isAgencyAdmin && isAccAgency;  // ✅ ADDED: ACC agency admin
 
   const filteredCases = cases.filter(c => {
     const matchesSearch = c.caseNo.toLowerCase().includes(search.toLowerCase()) ||
@@ -567,12 +529,9 @@ export default function AccOagReferralPage() {
     setExistingAttachments([]);
   };
 
-  const handleViewReadOnly = (caseItem: Case) => {
-    setReadOnlyCase(caseItem);
-    setShowReadOnlyModal(true);
-  };
-
+  // ✅ ADDED GUARDS: Prevent edit/delete on referred cases for ACC normal users and OAG admin deletion
   const handleEdit = (caseItem: Case) => {
+    // ACC normal user cannot edit referred case
     if (isAccNormalUser && caseItem.referredToOAG) {
       showNotification("Referred cases cannot be edited.", "error");
       return;
@@ -604,10 +563,12 @@ export default function AccOagReferralPage() {
   };
 
   const handleDelete = async (caseItem: Case) => {
+    // ACC normal user cannot delete referred case
     if (isAccNormalUser && caseItem.referredToOAG) {
       showNotification("Referred cases cannot be deleted.", "error");
       return;
     }
+    // OAG admin cannot delete any case
     if (isOagAdmin) {
       showNotification("OAG admin cannot delete cases.", "error");
       return;
@@ -861,32 +822,6 @@ export default function AccOagReferralPage() {
                 ) : <p className="text-gray-400 text-sm">No meetings added. Click "Add Meeting".</p>}
               </div>
 
-              {/* Case Updates Timeline (inside edit form, read‑only) */}
-              {editData && editData.updates && editData.updates.length > 0 && (
-                <div className="border-t pt-4">
-                  <h3 className="font-semibold mb-3">Case Updates (from OAG)</h3>
-                  <div className="space-y-3">
-                    {editData.updates.map((upd, idx) => (
-                      <div key={idx} className="border-l-4 border-green-500 pl-4 py-2 bg-gray-50 rounded">
-                        <div className="flex justify-between">
-                          <span className="font-medium">Status: {upd.status}</span>
-                          <span className="text-xs text-gray-500">{new Date(upd.createdAt).toLocaleString()}</span>
-                        </div>
-                        <p className="text-sm mt-1">{upd.reply}</p>
-                        {upd.attachments?.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {upd.attachments.map((file) => (
-                              <a key={file} href={`/uploads/acc-oag-referral/${file}`} target="_blank" className="text-blue-500 text-xs flex items-center gap-1">📎 {file}</a>
-                            ))}
-                          </div>
-                        )}
-                        <div className="text-xs text-gray-400 mt-1">by {upd.updatedBy.name}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <div className="flex justify-end gap-3">
                 <button type="button" onClick={() => setShowForm(false)} className="px-3 py-1.5 border rounded-md text-xs">Cancel</button>
                 <button type="submit" className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white rounded-md text-xs hover:bg-blue-700"><Check size={14} /> Save Case</button>
@@ -922,91 +857,77 @@ export default function AccOagReferralPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {paginated.map((c, idx) => {
-                  const statusInfo = getCaseStatus(c);
-                  return (
-                    <tr key={c._id} className="hover:bg-gray-100">
-                      <td className="px-6 py-3 text-sm">{start + idx + 1}</td>
-                      <td className="px-6 py-3 text-sm font-medium">{c.caseNo}</td>
-                      <td className="px-6 py-3 text-sm max-w-xs truncate">
-                        <div className="flex items-center gap-2">
-                          <span>{c.caseDescription.substring(0, 60)}</span>
-                          {c.caseDescription.length > 60 && (
-                            <button onClick={() => setSelectedView({ title: "Case Description", data: c.caseDescription })} className="text-blue-500"><Maximize2 size={14} /></button>
-                          )}
+                {paginated.map((c, idx) => (
+                  <tr key={c._id} className="hover:bg-gray-100">
+                    <td className="px-6 py-3 text-sm">{start + idx + 1}</td>
+                    <td className="px-6 py-3 text-sm font-medium">{c.caseNo}</td>
+                    <td className="px-6 py-3 text-sm max-w-xs truncate">
+                      <div className="flex items-center gap-2">
+                        <span>{c.caseDescription.substring(0, 60)}</span>
+                        {c.caseDescription.length > 60 && (
+                          <button onClick={() => setSelectedView({ title: "Case Description", data: c.caseDescription })} className="text-blue-500"><Maximize2 size={14} /></button>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-3 text-sm">{c.investigatorName}</td>
+                    <td className="px-6 py-3 text-sm">
+                      {c.assignedProsecutor?.name ? (
+                        <div className="flex items-center gap-1"><UserCheck size={14} className="text-green-600" /><span>{c.assignedProsecutor.name}</span></div>
+                      ) : (
+                        <span className="text-gray-400 text-xs">Not assigned</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-3 text-sm">{c.accusedDetails?.length || 0}</td>
+                    <td className="px-6 py-3 text-sm">{c.meetings?.length || 0}</td>
+                    <td className="px-6 py-3 text-sm">
+                      <span className={`px-2 py-1 rounded text-xs ${c.referredToOAG ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800"}`}>
+                        {c.referredToOAG ? "Referred to OAG" : "Draft"}
+                      </span>
+                    </td>
+                    <td className="px-6 py-3 text-sm">
+                      {c.attachments && c.attachments.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {c.attachments.slice(0,2).map((file,i) => (
+                            <div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
+                              <FileText size={12} className="text-gray-500" />
+                              <span className="text-xs truncate max-w-[80px]" title={file}>{file.length > 15 ? file.substring(0,15)+"..." : file}</span>
+                              <button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button>
+                              <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button>
+                            </div>
+                          ))}
+                          {c.attachments.length > 2 && <span className="text-xs text-gray-500">+{c.attachments.length-2}</span>}
                         </div>
-                      </td>
-                      <td className="px-6 py-3 text-sm">{c.investigatorName}</td>
-                      <td className="px-6 py-3 text-sm">
-                        {c.assignedProsecutor?.name ? (
-                          <div className="flex items-center gap-1"><UserCheck size={14} className="text-green-600" /><span>{c.assignedProsecutor.name}</span></div>
-                        ) : (
-                          <span className="text-gray-400 text-xs">Not assigned</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-3 text-sm">{c.accusedDetails?.length || 0}</td>
-                      <td className="px-6 py-3 text-sm">{c.meetings?.length || 0}</td>
-                      <td className="px-6 py-3 text-sm">
-                        <span className={`px-2 py-1 rounded text-xs ${statusInfo.color}`}>
-                          {statusInfo.label}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3 text-sm">
-                        {c.attachments && c.attachments.length > 0 ? (
-                          <div className="flex flex-wrap gap-2">
-                            {c.attachments.slice(0,2).map((file,i) => (
-                              <div key={i} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
-                                <FileText size={12} className="text-gray-500" />
-                                <span className="text-xs truncate max-w-[80px]" title={file}>{file.length > 15 ? file.substring(0,15)+"..." : file}</span>
-                                <button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button>
-                                <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button>
-                              </div>
-                            ))}
-                            {c.attachments.length > 2 && <span className="text-xs text-gray-500">+{c.attachments.length-2}</span>}
-                          </div>
-                        ) : <span className="text-gray-400 text-xs">No files</span>}
-                      </td>
-                      <td className="px-6 py-3 text-sm flex gap-2 flex-wrap">
-                        {/* View Details for OAG admin */}
-                        {isOagAdmin && (
-                          <button onClick={() => handleViewReadOnly(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
-                            <Eye size={12} /> View Details
-                          </button>
-                        )}
-                        {/* View Updates for ACC normal user on referred case */}
-                        {isAccNormalUser && c.referredToOAG && (
-                          <button onClick={() => handleViewReadOnly(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
-                            <Eye size={12} /> View Updates
-                          </button>
-                        )}
-                        {/* Edit button for ACC normal (not referred) or ACC admin */}
-                        {((isAccNormalUser && !c.referredToOAG) || isAccAdmin) && (
-                          <button onClick={() => handleEdit(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
-                            <Pencil size={12} /> Edit
-                          </button>
-                        )}
-                        {/* Refer button – visible for ACC normal or ACC admin when not referred */}
-                        {!isOagAdmin && !c.referredToOAG && (
-                          <button onClick={() => handleReferToOAG(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-blue-600">
-                            <Send size={12} /> Refer
-                          </button>
-                        )}
-                        {/* Assign button – only for agency admin, when case is referred AND no prosecutor assigned yet */}
-                        {canAssign && c.referredToOAG && !c.assignedProsecutor && (
-                          <button onClick={() => openAssignModal(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
-                            <UserPlus size={12} /> Assign
-                          </button>
-                        )}
-                        {/* Delete button – visible only for ACC normal (not referred) or ACC admin */}
-                        {((isAccNormalUser && !c.referredToOAG) || isAccAdmin) && (
-                          <button onClick={() => handleDelete(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-red-500">
-                            <Trash2 size={12} /> Delete
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                      ) : <span className="text-gray-400 text-xs">No files</span>}
+                    </td>
+                    {/* ACTIONS COLUMN – UPDATED BUTTON LOGIC */}
+                    <td className="px-6 py-3 text-sm flex gap-2">
+                      {/* Edit button – visible for ACC normal (not referred), ACC admin, or OAG admin */}
+                      {((isAccNormalUser && !c.referredToOAG) || isAccAdmin || isOagAdmin) && (
+                        <button onClick={() => handleEdit(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
+                          <Pencil size={12} /> Edit
+                        </button>
+                      )}
+                      {/* Refer button – visible for ACC normal or ACC admin when not referred */}
+                      {!isOagAdmin && !c.referredToOAG && (
+                        <button onClick={() => handleReferToOAG(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-blue-600">
+                          <Send size={12} /> Refer
+                        </button>
+                      )}
+                      {/* Assign button – visible for agency admin (both ACC and OAG) when case is referred */}
+                      {canAssign && c.referredToOAG && (
+                        <button onClick={() => openAssignModal(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
+                          <UserPlus size={12} /> Assign
+                        </button>
+                      )}
+                      {/* Delete button – visible only for ACC normal (not referred) or ACC admin */}
+                      {((isAccNormalUser && !c.referredToOAG) || isAccAdmin) && (
+                        <button onClick={() => handleDelete(c)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-red-500">
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
                 {paginated.length === 0 && (
                   <tr><td colSpan={10} className="text-center py-6 text-gray-500">No cases found</td></tr>
                 )}
@@ -1076,127 +997,6 @@ export default function AccOagReferralPage() {
               </div>
             </div>
             <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-xl"><button onClick={() => setShowMeetingModal(false)} className="px-4 py-2 border rounded-md">Cancel</button><button onClick={saveMeeting} className="px-4 py-2 bg-blue-600 text-white rounded-md">{editingMeetingIndex !== null ? "Update" : "Add"}</button></div>
-          </div>
-        </div>
-      )}
-
-      {/* Read‑only Modal for viewing case details & updates (used by ACC normal and OAG admin) */}
-      {showReadOnlyModal && readOnlyCase && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
-              <h3 className="text-xl font-semibold">Case Details & Updates</h3>
-              <button onClick={() => setShowReadOnlyModal(false)} className="text-gray-500 hover:text-gray-700">
-                <X size={24} />
-              </button>
-            </div>
-            <div className="p-6 space-y-6">
-              {/* Basic Info */}
-              <div className="grid md:grid-cols-2 gap-4">
-                <div><label className="text-sm font-medium">Case No.</label><p className="mt-1">{readOnlyCase.caseNo}</p></div>
-                <div><label className="text-sm font-medium">Investigator</label><p className="mt-1">{readOnlyCase.investigatorName}</p></div>
-                <div><label className="text-sm font-medium">Designation</label><p className="mt-1">{readOnlyCase.investigatorDesignation || "-"}</p></div>
-                <div><label className="text-sm font-medium">Contact</label><p className="mt-1">{readOnlyCase.investigatorContact || "-"}</p></div>
-                <div className="md:col-span-2"><label className="text-sm font-medium">Case Description</label><p className="mt-1 whitespace-pre-wrap">{readOnlyCase.caseDescription}</p></div>
-                <div className="md:col-span-2"><label className="text-sm font-medium">Remarks</label><p className="mt-1">{readOnlyCase.remarks || "-"}</p></div>
-              </div>
-
-              {/* Attachments */}
-              {readOnlyCase.attachments && readOnlyCase.attachments.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-2">Attachments</h4>
-                  <div className="space-y-2">
-                    {readOnlyCase.attachments.map((file, idx) => (
-                      <div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded">
-                        <FileText size={14} className="text-gray-500" />
-                        <span>{file}</span>
-                        <a href={`/uploads/acc-oag-referral/${file}`} target="_blank" className="text-blue-500 text-sm ml-auto">View</a>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Accused Details */}
-              {readOnlyCase.accusedDetails && readOnlyCase.accusedDetails.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-2">Accused Details</h4>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full border">
-                      <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs">Name</th><th className="px-4 py-2 text-left text-xs">CID</th><th className="px-4 py-2 text-left text-xs">Act</th><th className="px-4 py-2 text-left text-xs">Section</th><th className="px-4 py-2 text-left text-xs">Charge</th><th className="px-4 py-2 text-left text-xs">Counts</th><th className="px-4 py-2 text-left text-xs">Prayer</th></tr></thead>
-                      <tbody>
-                        {readOnlyCase.accusedDetails.map((acc, idx) => (
-                          <tr key={idx} className="border-t">
-                            <td className="px-4 py-2 text-sm">{acc.name}</td>
-                            <td className="px-4 py-2 text-sm">{acc.cid}</td>
-                            <td className="px-4 py-2 text-sm">{getActName(acc.actId)}</td>
-                            <td className="px-4 py-2 text-sm">{getSectionName(acc.sectionId)}</td>
-                            <td className="px-4 py-2 text-sm">{getChargeName(acc.chargeId)}</td>
-                            <td className="px-4 py-2 text-sm">{acc.counts}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{acc.prayer}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Meetings */}
-              {readOnlyCase.meetings && readOnlyCase.meetings.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-2">Meetings</h4>
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full border">
-                      <thead className="bg-gray-50"><tr><th className="px-4 py-2 text-left text-xs">Date</th><th className="px-4 py-2 text-left text-xs">Type</th><th className="px-4 py-2 text-left text-xs">Agenda</th><th className="px-4 py-2 text-left text-xs">Participants</th><th className="px-4 py-2 text-left text-xs">Minutes</th><th className="px-4 py-2 text-left text-xs">Attachments</th></tr></thead>
-                      <tbody>
-                        {readOnlyCase.meetings.map((m, idx) => (
-                          <tr key={idx} className="border-t">
-                            <td className="px-4 py-2 text-sm">{new Date(m.date).toLocaleDateString()}</td>
-                            <td className="px-4 py-2 text-sm">{m.type}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.agenda}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.participants}</td>
-                            <td className="px-4 py-2 text-sm max-w-xs truncate">{m.minutes}</td>
-                            <td className="px-4 py-2 text-sm">{m.attachments?.length || 0} file(s)</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {/* Updates Timeline */}
-              {readOnlyCase.updates && readOnlyCase.updates.length > 0 && (
-                <div>
-                  <h4 className="font-semibold mb-2">Case Updates (from OAG)</h4>
-                  <div className="space-y-3">
-                    {readOnlyCase.updates.map((upd, idx) => (
-                      <div key={idx} className="border-l-4 border-green-500 pl-4 py-2 bg-gray-50 rounded">
-                        <div className="flex justify-between">
-                          <span className="font-medium">Status: {upd.status}</span>
-                          <span className="text-xs text-gray-500">{new Date(upd.createdAt).toLocaleString()}</span>
-                        </div>
-                        <p className="text-sm mt-1">{upd.reply}</p>
-                        {upd.attachments?.length > 0 && (
-                          <div className="mt-1 flex flex-wrap gap-2">
-                            {upd.attachments.map((file) => (
-                              <a key={file} href={`/uploads/acc-oag-referral/${file}`} target="_blank" className="text-blue-500 text-xs flex items-center gap-1">📎 {file}</a>
-                            ))}
-                          </div>
-                        )}
-                        <div className="text-xs text-gray-400 mt-1">by {upd.updatedBy.name}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <div className="sticky bottom-0 bg-gray-50 p-4 text-right border-t">
-              <button onClick={() => setShowReadOnlyModal(false)} className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700">
-                Close
-              </button>
-            </div>
           </div>
         </div>
       )}

@@ -18,22 +18,6 @@ const AccusedDetailSchema = new mongoose.Schema({
   counts: { type: Number, default: 1 },
 });
 
-// ✅ NEW: Case Update Schema for OAG replies
-const CaseUpdateSchema = new mongoose.Schema({
-  status: { 
-    type: String, 
-    enum: ['Ongoing', 'Completed', 'Rejected'], 
-    default: 'Ongoing' 
-  },
-  reply: { type: String, required: true },
-  attachments: [{ type: String }],
-  updatedBy: {
-    _id: { type: String, required: true },
-    name: { type: String, required: true },
-    email: { type: String, required: true },
-  },
-}, { timestamps: true });
-
 const AccOagReferralSchema = new mongoose.Schema(
   {
     caseNo: { type: String, required: true, unique: true },
@@ -44,7 +28,6 @@ const AccOagReferralSchema = new mongoose.Schema(
     attachments: [{ type: String }],
     accusedDetails: [AccusedDetailSchema],
     meetings: [MeetingSchema],
-    updates: [CaseUpdateSchema],   // ✅ ADDED: stores case updates/replies from OAG
     status: { type: String, default: 'Pending' },
     remarks: { type: String, default: '' },
     referredToOAG: { type: Boolean, default: false },
