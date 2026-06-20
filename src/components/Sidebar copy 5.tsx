@@ -144,14 +144,8 @@ export default function Sidebar() {
 
   const isAdmin = isAdminUser || userRole === "Admin";
   const agencyLower = agencyName.toLowerCase();
-
-  // ------ UPDATED AGENCY DETECTION (RAA now includes Royal Audit) ------
   const isAccAgency = agencyLower.includes("anti-corruption") || agencyLower.includes("acc");
   const isOagAgency = agencyLower.includes("attorney general") || agencyLower.includes("oag");
-  const isRaaAgency =
-    agencyLower.includes("royal audit") ||
-    agencyLower.includes("audit authority") ||
-    agencyLower.includes("raa"); // keep for safety
 
   const isMasterActive = pathname === "/admin/department" || pathname === "/division";
   const isLeaveActive = pathname.startsWith("/dashboard/leave") ||
@@ -264,33 +258,27 @@ export default function Sidebar() {
         ) : (
           // NON-ADMIN SECTION – show modules based on agency
           <>
-            {/* ACC and RAA users see both referral pages */}
-            {(isAccAgency || isRaaAgency) && (
-              <>
-                <button onClick={() => router.push("/admin/acc-raa-referral")} className={navButtonClass(pathname.startsWith("/admin/acc-raa-referral"))}>
-                  <Shield size={18} /> <span className="flex-1 text-left">Acc-Raa Referral</span>
-                </button>
-                <button onClick={() => router.push("/admin/raa-acc-referral")} className={navButtonClass(pathname.startsWith("/admin/raa-acc-referral"))}>
-                  <Shield size={18} /> <span className="flex-1 text-left">Raa-Acc-Referral</span>
-                </button>
-              </>
+            {isAccAgency && (
+              <button onClick={() => router.push("/admin/acc-raa-referral")} className={navButtonClass(pathname.startsWith("/admin/acc-raa-referral"))}>
+                <Shield size={18} /> <span className="flex-1 text-left">Acc-Raa Referral</span>
+              </button>
             )}
 
-            {/* OAG agency admin gets Acc-Oag-Referral */}
+            {/* Only OAG agency admins see the Acc-Oag-Referral page */}
             {isOagAgency && isAgencyAdminUser && (
               <button onClick={() => router.push("/admin/acc-oag-referral")} className={navButtonClass(pathname.startsWith("/admin/acc-oag-referral"))}>
                 <Shield size={18} /> <span className="flex-1 text-left">Acc-Oag-Referral</span>
               </button>
             )}
 
-            {/* OAG normal officers get "My Assigned Cases" */}
+            {/* NEW: Normal OAG officers (non‑agency‑admin) see "My Assigned Cases" */}
             {isOagAgency && !isAgencyAdminUser && (
               <button onClick={() => router.push("/admin/acc-oag-referral/prosecutor-cases")} className={navButtonClass(pathname === "/admin/acc-oag-referral/prosecutor-cases")}>
                 <Shield size={18} /> <span className="flex-1 text-left">My Assigned Cases</span>
               </button>
             )}
 
-            {/* OAG agency admin gets Pending Approvals and All Users */}
+            {/* OAG agency admin gets Pending Approvals AND All Users */}
             {isOagAgency && isAgencyAdminUser && (
               <>
                 <button onClick={() => router.push("/admin/pending-users")} className={navButtonClass(pathname === "/admin/pending-users")}>
@@ -307,10 +295,10 @@ export default function Sidebar() {
             </button>
 
             {/* Optional debug info – remove after confirming */}
-            {!isAccAgency && !isOagAgency && !isRaaAgency && (
+            {!isAccAgency && !isOagAgency && (
               <div className="text-xs text-gray-400 text-center p-2">
                 Agency: {agencyName || "none"}<br />
-                OAG: false | ACC: false | RAA: false
+                OAG: false | ACC: false
               </div>
             )}
           </>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, ChangeEvent } from "react";
-import { Trash2, Pencil, Save, Check, X, Plus, Upload, FileText, Download, Eye } from "lucide-react";
+import { Trash2, Pencil, Save, Check, X, Plus, Upload, FileText, Download, Eye, Send, UserPlus, UserCheck } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 type Referral = {
@@ -13,6 +13,17 @@ type Referral = {
   referral_date: string;
   status: string;
   attachments?: string[];
+  referredToRAA?: boolean;
+  assignedTo?: { _id: string; name: string; email: string } | null;
+  updates?: {
+    status: string;
+    reply: string;
+    attachments: string[];
+    updatedBy: { _id: string; name: string; email: string };
+    createdAt: string;
+  }[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 type Notification = {
@@ -28,6 +39,8 @@ type FormData = {
   referral_date: string;
 };
 
+type Officer = { _id: string; name: string; email: string; role: string };
+
 export default function AddReferralPage() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -40,6 +53,22 @@ export default function AddReferralPage() {
   const [attachments, setAttachments] = useState<File[]>([]);
   const [existingAttachments, setExistingAttachments] = useState<string[]>([]);
 
+  // New states for RAA workflow
+  const [currentUserAgency, setCurrentUserAgency] = useState("");
+  const [isAgencyAdmin, setIsAgencyAdmin] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState("");
+  const [isLoadingUser, setIsLoadingUser] = useState(true);
+  const [officers, setOfficers] = useState<Officer[]>([]);
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [selectedReferral, setSelectedReferral] = useState<Referral | null>(null);
+  const [selectedOfficerId, setSelectedOfficerId] = useState("");
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateReferral, setUpdateReferral] = useState<Referral | null>(null);
+  const [updateForm, setUpdateForm] = useState({ status: "", reply: "" });
+  const [updateAttachments, setUpdateAttachments] = useState<File[]>([]);
+  const [viewModalOpen, setViewModalOpen] = useState(false);
+  const [viewReferral, setViewReferral] = useState<Referral | null>(null);
+
   const [formData, setFormData] = useState<FormData>({
     year: "",
     crn: "",
@@ -48,10 +77,60 @@ export default function AddReferralPage() {
     referral_date: "",
   });
 
-  // ================== FETCH ==================
+  // ================== AUTH / ROLE ==================
+  const getToken = () => localStorage.getItem("token");
+
+  const deriveAgency = (email: string): string => {
+    if (!email) return "";
+    const domain = email.split("@")[1]?.toLowerCase();
+    if (domain?.includes("oag") || domain?.includes("attorneygeneral")) return "Office of the Attorney General";
+    if (domain?.includes("acc") || domain?.includes("anticorruption")) return "Anti-Corruption Commission";
+    if (domain?.includes("raa") || domain?.includes("audit")) return "Royal Audit Authority";
+    return "";
+  };
+
+  useEffect(() => {
+    const token = getToken();
+    let userEmail = "";
+    if (token) {
+      try {
+        const payload = JSON.parse(atob(token.split(".")[1]));
+        setCurrentUserId(payload.id || payload._id || payload.userId || "");
+        setIsAgencyAdmin(payload.isAgencyAdmin === true);
+        userEmail = payload.email || "";
+      } catch (e) { console.error(e); }
+    }
+
+    const fetchUserProfile = async () => {
+      try {
+        const token = getToken();
+        if (!token) return;
+        const res = await fetch("/api/user/profile", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const profile = await res.json();
+          setCurrentUserAgency(profile.agencyName || deriveAgency(profile.email || userEmail));
+        } else {
+          setCurrentUserAgency(deriveAgency(userEmail));
+        }
+      } catch (e) {
+        setCurrentUserAgency(deriveAgency(userEmail));
+      } finally {
+        setIsLoadingUser(false);
+      }
+    };
+    fetchUserProfile();
+    fetchReferrals();
+  }, []);
+
+  // ================== FETCH REFERRALS ==================
   const fetchReferrals = async () => {
     try {
-      const res = await fetch("/api/acc-raa-referrals");
+      const token = getToken();
+      const res = await fetch("/api/acc-raa-referrals", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       const data = await res.json();
       setReferrals(data);
     } catch (error) {
@@ -59,11 +138,42 @@ export default function AddReferralPage() {
     }
   };
 
-  useEffect(() => {
-    fetchReferrals();
-  }, []);
+  // ================== OFFICERS (for assignment) ==================
+  const fetchOfficers = async () => {
+    try {
+      const token = getToken();
+      if (!token) return;
+      const res = await fetch("/api/users?role=Officer&agency=RAA", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setOfficers(data);
+      } else {
+        // fallback: get all officers and filter by agency
+        const fallbackRes = await fetch("/api/users?role=Officer", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (fallbackRes.ok) {
+          const all = await fallbackRes.json();
+          const raaOfficers = all.filter((o: Officer) => 
+            o.email?.toLowerCase().includes("raa") || o.email?.toLowerCase().includes("audit")
+          );
+          setOfficers(raaOfficers);
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load officers", error);
+    }
+  };
 
-  // ================== FILE HANDLERS ==================
+  // ================== NOTIFICATION ==================
+  const showNotification = (message: string, type: "success" | "error" = "success") => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  // ================== FILE HANDLERS (main form) ==================
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length) {
@@ -78,54 +188,39 @@ export default function AddReferralPage() {
 
   const handleRemoveExistingFile = async (fileName: string) => {
     if (!editData) return;
-    
     try {
+      const token = getToken();
       const res = await fetch("/api/acc-raa-referrals/delete-file", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          referralId: editData._id, 
-          fileName: fileName 
-        }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ referralId: editData._id, fileName }),
       });
-      
       if (!res.ok) throw new Error("Failed to delete file");
-      
       setExistingAttachments((prev) => prev.filter((f) => f !== fileName));
       showNotification("File deleted successfully");
-      
-      // Refresh the referrals list to update the table
       await fetchReferrals();
     } catch (error) {
       showNotification((error as Error).message, "error");
     }
   };
 
-  // ================== FILE VIEW/DOWNLOAD ==================
   const handleViewFile = (fileName: string) => {
-    const fileUrl = `/uploads/acc-raa-referral/${fileName}`;
-    window.open(fileUrl, '_blank');
+    window.open(`/uploads/acc-raa-referral/${fileName}`, "_blank");
   };
 
   const handleDownloadFile = (fileName: string) => {
-    const fileUrl = `/uploads/acc-raa-referral/${fileName}`;
-    const link = document.createElement('a');
-    link.href = fileUrl;
+    const link = document.createElement("a");
+    link.href = `/uploads/acc-raa-referral/${fileName}`;
     link.download = fileName;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
-  // ================== FORM HANDLERS ==================
+  // ================== FORM HANDLERS (main form) ==================
   const handleFormChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData({ ...formData, [name]: value });
-  };
-
-  const showNotification = (message: string, type: "success" | "error" = "success") => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
   };
 
   const resetForm = () => {
@@ -142,7 +237,7 @@ export default function AddReferralPage() {
     setShowForm(false);
   };
 
-  // ================== ADD / UPDATE ==================
+  // ================== ADD / UPDATE (main) ==================
   const handleAddOrUpdate = async () => {
     if (!formData.year || !formData.crn) {
       showNotification("Year and CRN are required", "error");
@@ -154,25 +249,25 @@ export default function AddReferralPage() {
       Object.keys(formData).forEach((key) => {
         if (formData[key as keyof FormData]) body.append(key, formData[key as keyof FormData]);
       });
-      
-      // Append new attachments
-      attachments.forEach((file) => {
-        body.append("attachments", file);
-      });
-
-      // Append existing attachments if editing
+      attachments.forEach((file) => body.append("attachments", file));
       if (editData && existingAttachments.length > 0) {
         body.append("existingAttachments", JSON.stringify(existingAttachments));
       }
 
       const url = "/api/acc-raa-referrals";
       const method = editData ? "PUT" : "POST";
-
       if (editData) body.append("_id", editData._id);
 
-      const res = await fetch(url, { method, body });
-      if (!res.ok) throw new Error("Failed to save");
-
+      const token = getToken();
+      const res = await fetch(url, {
+        method,
+        body,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to save");
+      }
       await fetchReferrals();
       resetForm();
       showNotification(editData ? "Referral updated successfully" : "Referral added successfully");
@@ -181,38 +276,109 @@ export default function AddReferralPage() {
     }
   };
 
-  // ================== EDIT ==================
-  const handleEdit = (ref: Referral) => {
-    setEditData(ref);
-    setFormData({
-      year: ref.year,
-      crn: ref.crn,
-      alleged: ref.alleged,
-      sharing_letter_no: ref.sharing_letter_no,
-      referral_date: ref.referral_date?.split("T")[0] || "",
-    });
-    setExistingAttachments(ref.attachments || []);
-    setAttachments([]);
-    setShowForm(true);
-  };
-
-  // ================== DELETE ==================
-  const handleDelete = async (ref: Referral) => {
-    if (!confirm(`Are you sure you want to delete "${ref.crn}"?`)) return;
-
+  // ================== SUBMIT TO RAA ==================
+  const handleSubmitToRAA = async (ref: Referral) => {
+    if (!confirm(`Submit referral "${ref.crn}" to RAA?`)) return;
     try {
-      const res = await fetch("/api/acc-raa-referrals", {
-        method: "DELETE",
-        body: JSON.stringify({ _id: ref._id }),
-        headers: { "Content-Type": "application/json" },
+      const token = getToken();
+      const res = await fetch("/api/acc-raa-referrals/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ referralId: ref._id }),
       });
-      if (!res.ok) throw new Error("Failed to delete");
-
+      if (!res.ok) throw new Error("Submission failed");
       await fetchReferrals();
-      showNotification("Referral deleted successfully");
+      showNotification("Referral submitted to RAA");
     } catch (error) {
       showNotification((error as Error).message, "error");
     }
+  };
+
+  // ================== UPDATE (RAA) ==================
+  const openUpdateModal = (ref: Referral) => {
+    setUpdateReferral(ref);
+    setUpdateForm({ status: "", reply: "" });
+    setUpdateAttachments([]);
+    setShowUpdateModal(true);
+  };
+
+  const handleUpdateFormChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setUpdateForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleUpdateFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length) setUpdateAttachments((prev) => [...prev, ...files]);
+    e.target.value = "";
+  };
+
+  const handleRemoveUpdateFile = (index: number) => {
+    setUpdateAttachments((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const submitUpdate = async () => {
+    if (!updateReferral) return;
+    if (!updateForm.status || !updateForm.reply) {
+      showNotification("Status and reply are required", "error");
+      return;
+    }
+
+    try {
+      const body = new FormData();
+      body.append("referralId", updateReferral._id);
+      body.append("status", updateForm.status);
+      body.append("reply", updateForm.reply);
+      updateAttachments.forEach((file) => body.append("attachments", file));
+
+      const token = getToken();
+      const res = await fetch("/api/acc-raa-referrals/update", {
+        method: "POST",
+        body,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (!res.ok) throw new Error("Failed to add update");
+      await fetchReferrals();
+      setShowUpdateModal(false);
+      showNotification("Update added successfully");
+    } catch (error) {
+      showNotification((error as Error).message, "error");
+    }
+  };
+
+  // ================== ASSIGN ==================
+  const openAssignModal = (ref: Referral) => {
+    setSelectedReferral(ref);
+    setSelectedOfficerId(ref.assignedTo?._id || "");
+    fetchOfficers();
+    setShowAssignModal(true);
+  };
+
+  const handleAssign = async () => {
+    if (!selectedReferral || !selectedOfficerId) {
+      showNotification("Please select an officer", "error");
+      return;
+    }
+    try {
+      const token = getToken();
+      const res = await fetch("/api/acc-raa-referrals/assign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ referralId: selectedReferral._id, officerId: selectedOfficerId }),
+      });
+      if (!res.ok) throw new Error("Assignment failed");
+      await fetchReferrals();
+      showNotification("Assigned successfully");
+      setShowAssignModal(false);
+    } catch (error) {
+      showNotification((error as Error).message, "error");
+    }
+  };
+
+  // ================== VIEW DETAILS ==================
+  const openViewModal = (ref: Referral) => {
+    setViewReferral(ref);
+    setViewModalOpen(true);
   };
 
   // ================== SORT & SEARCH ==================
@@ -239,25 +405,17 @@ export default function AddReferralPage() {
       (ref.alleged?.toLowerCase() || "").includes(search.toLowerCase())
   );
 
-  // FIXED: Type-safe sorting with undefined handling
   const sortedReferrals = [...filteredReferrals].sort((a, b) => {
     if (!sortConfig.key) return 0;
     const key = sortConfig.key as keyof Referral;
     const aVal = a[key];
     const bVal = b[key];
-    
-    // Handle undefined/null values - put them at the end
     if (aVal == null && bVal == null) return 0;
     if (aVal == null) return 1;
     if (bVal == null) return -1;
-    
-    // For string comparison (case insensitive)
     if (typeof aVal === 'string' && typeof bVal === 'string') {
-      const comparison = aVal.localeCompare(bVal);
-      return sortConfig.direction === "asc" ? comparison : -comparison;
+      return sortConfig.direction === "asc" ? aVal.localeCompare(bVal) : -aVal.localeCompare(bVal);
     }
-    
-    // For numbers and dates
     if (aVal < bVal) return sortConfig.direction === "asc" ? -1 : 1;
     if (aVal > bVal) return sortConfig.direction === "asc" ? 1 : -1;
     return 0;
@@ -267,11 +425,26 @@ export default function AddReferralPage() {
   const startIndex = (currentPage - 1) * rowsPerPage;
   const paginatedReferrals = sortedReferrals.slice(startIndex, startIndex + rowsPerPage);
 
-  // Get sort icon
   const getSortIcon = (key: keyof Referral) => {
     if (sortConfig.key !== key) return null;
     return sortConfig.direction === "asc" ? "↑" : "↓";
   };
+
+  // Determine user roles
+  const isAccUser = currentUserAgency?.toLowerCase().includes("anti-corruption") || currentUserAgency?.toLowerCase().includes("acc");
+  const isRaaUser = currentUserAgency?.toLowerCase().includes("royal audit") || currentUserAgency?.toLowerCase().includes("raa");
+  const isRaaAdmin = isRaaUser && isAgencyAdmin;
+
+  if (isLoadingUser) {
+    return (
+      <div className="flex">
+        <Sidebar />
+        <main className="flex-1 p-6 ml-64 bg-gray-100 min-h-screen flex items-center justify-center">
+          <div className="text-gray-500">Loading...</div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="flex">
@@ -280,7 +453,7 @@ export default function AddReferralPage() {
         {/* Header */}
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">ACC - RAA Referral</h1>
-          {!showForm && (
+          {!showForm && isAccUser && (
             <button
               onClick={() => setShowForm(true)}
               className="flex items-center gap-2 px-3 py-1.5 bg-white border rounded-md text-xs font-medium hover:border-black transition"
@@ -302,85 +475,46 @@ export default function AddReferralPage() {
           </div>
         )}
 
-        {/* Add/Edit Form */}
-        {showForm && (
+        {/* Add/Edit Form (ACC only) */}
+        {showForm && isAccUser && (
           <div className="bg-white shadow rounded-xl p-6 mb-6">
             <div className="flex justify-between mb-4">
               <h2 className="text-lg font-semibold">{editData ? "Edit Referral" : "Add Referral"}</h2>
-              <button onClick={resetForm} className="text-xl text-gray-500">
-                ✕
-              </button>
+              <button onClick={resetForm} className="text-xl text-gray-500">✕</button>
             </div>
 
             <div className="grid md:grid-cols-2 gap-4">
               <div>
                 <label className="text-sm font-medium">Year</label>
-                <input
-                  type="text"
-                  name="year"
-                  value={formData.year}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <input type="text" name="year" value={formData.year} onChange={handleFormChange} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
                 <label className="text-sm font-medium">CRN</label>
-                <input
-                  type="text"
-                  name="crn"
-                  value={formData.crn}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <input type="text" name="crn" value={formData.crn} onChange={handleFormChange} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
                 <label className="text-sm font-medium">Alleged</label>
-                <input
-                  type="text"
-                  name="alleged"
-                  value={formData.alleged}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <input type="text" name="alleged" value={formData.alleged} onChange={handleFormChange} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
                 <label className="text-sm font-medium">Sharing Letter No</label>
-                <input
-                  type="text"
-                  name="sharing_letter_no"
-                  value={formData.sharing_letter_no}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <input type="text" name="sharing_letter_no" value={formData.sharing_letter_no} onChange={handleFormChange} className="w-full border rounded px-3 py-2" />
               </div>
               <div>
                 <label className="text-sm font-medium">Referral Date</label>
-                <input
-                  type="date"
-                  name="referral_date"
-                  value={formData.referral_date}
-                  onChange={handleFormChange}
-                  className="w-full border rounded px-3 py-2"
-                />
+                <input type="date" name="referral_date" value={formData.referral_date} onChange={handleFormChange} className="w-full border rounded px-3 py-2" />
               </div>
             </div>
 
-            {/* File Attachments Section */}
+            {/* Attachments (main) */}
             <div className="mt-4">
               <div className="flex items-center gap-2 mb-2">
                 <label className="text-sm font-medium">Attach Files (optional)</label>
                 <label className="cursor-pointer text-gray-500 hover:text-gray-700 transition">
                   <Upload size={16} />
-                  <input
-                    type="file"
-                    multiple
-                    onChange={handleFileSelect}
-                    className="hidden"
-                  />
+                  <input type="file" multiple onChange={handleFileSelect} className="hidden" />
                 </label>
               </div>
-              
-              {/* Existing attachments (for edit mode) */}
               {existingAttachments.length > 0 && (
                 <div className="space-y-2 mt-3">
                   <label className="text-xs font-medium text-gray-500">Existing Files:</label>
@@ -391,37 +525,14 @@ export default function AddReferralPage() {
                         <span className="text-gray-700">{fileName}</span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleViewFile(fileName)}
-                          className="text-blue-500 hover:text-blue-700 transition"
-                          title="View"
-                        >
-                          <Eye size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadFile(fileName)}
-                          className="text-green-500 hover:text-green-700 transition"
-                          title="Download"
-                        >
-                          <Download size={14} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveExistingFile(fileName)}
-                          className="text-red-500 hover:text-red-700 transition"
-                          title="Delete"
-                        >
-                          <X size={14} />
-                        </button>
+                        <button onClick={() => handleViewFile(fileName)} className="text-blue-500 hover:text-blue-700"><Eye size={14} /></button>
+                        <button onClick={() => handleDownloadFile(fileName)} className="text-green-500 hover:text-green-700"><Download size={14} /></button>
+                        <button onClick={() => handleRemoveExistingFile(fileName)} className="text-red-500 hover:text-red-700"><X size={14} /></button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-              
-              {/* New attachments */}
               {attachments.length > 0 && (
                 <div className="space-y-2 mt-3">
                   <label className="text-xs font-medium text-gray-500">New Files:</label>
@@ -431,13 +542,7 @@ export default function AddReferralPage() {
                         <FileText size={14} className="text-gray-500" />
                         <span className="text-gray-700">{file.name}</span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFile(idx)}
-                        className="text-red-500 hover:text-red-700 transition"
-                      >
-                        <X size={14} />
-                      </button>
+                      <button onClick={() => handleRemoveFile(idx)} className="text-red-500 hover:text-red-700"><X size={14} /></button>
                     </div>
                   ))}
                 </div>
@@ -445,16 +550,8 @@ export default function AddReferralPage() {
             </div>
 
             <div className="flex justify-end gap-3 mt-5">
-              <button
-                onClick={resetForm}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-              >
-                <X size={14} /> Cancel
-              </button>
-              <button
-                onClick={handleAddOrUpdate}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-              >
+              <button onClick={resetForm} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"><X size={14} /> Cancel</button>
+              <button onClick={handleAddOrUpdate} className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition">
                 {editData ? <Check size={14} /> : <Save size={14} />}
                 {editData ? "Update" : "Save"}
               </button>
@@ -489,49 +586,27 @@ export default function AddReferralPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-sm font-medium uppercase">S/N</th>
-                <th
-                  onClick={() => handleSort("year")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100"
-                >
-                  Year {getSortIcon("year")}
-                </th>
-                <th
-                  onClick={() => handleSort("crn")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100"
-                >
-                  CRN {getSortIcon("crn")}
-                </th>
-                <th
-                  onClick={() => handleSort("alleged")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100"
-                >
-                  Alleged {getSortIcon("alleged")}
-                </th>
-                <th
-                  onClick={() => handleSort("sharing_letter_no")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100"
-                >
-                  Sharing Letter No {getSortIcon("sharing_letter_no")}
-                </th>
-                <th
-                  onClick={() => handleSort("referral_date")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100"
-                >
-                  Referral Date {getSortIcon("referral_date")}
-                </th>
-                <th
-                  onClick={() => handleSort("status")}
-                  className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100"
-                >
-                  Status {getSortIcon("status")}
-                </th>
+                <th onClick={() => handleSort("year")} className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100">Year {getSortIcon("year")}</th>
+                <th onClick={() => handleSort("crn")} className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100">CRN {getSortIcon("crn")}</th>
+                <th onClick={() => handleSort("alleged")} className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100">Alleged {getSortIcon("alleged")}</th>
+                <th onClick={() => handleSort("sharing_letter_no")} className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100">Sharing Letter No {getSortIcon("sharing_letter_no")}</th>
+                <th onClick={() => handleSort("referral_date")} className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100">Referral Date {getSortIcon("referral_date")}</th>
+                <th onClick={() => handleSort("status")} className="px-6 py-3 text-left text-sm font-medium uppercase cursor-pointer select-none hover:bg-gray-100">Status {getSortIcon("status")}</th>
+                <th className="px-6 py-3 text-left text-sm font-medium uppercase">Assigned To</th>
                 <th className="px-6 py-3 text-left text-sm font-medium uppercase">Attachments</th>
                 <th className="px-6 py-3 text-left text-sm font-medium uppercase">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {paginatedReferrals.length > 0 ? (
-                paginatedReferrals.map((ref, index) => (
+              {paginatedReferrals.map((ref, index) => {
+                const isSubmitted = ref.referredToRAA === true;
+                const isAssigned = !!ref.assignedTo;
+                const canEdit = isAccUser && !isSubmitted;
+                const canDelete = isAccUser && !isSubmitted;
+                const canSubmit = isAccUser && !isSubmitted;
+                const canUpdate = isRaaUser && isSubmitted;
+                const canAssign = isRaaAdmin && isSubmitted && !isAssigned;
+                return (
                   <tr key={ref._id} className="hover:bg-gray-100 transition-colors">
                     <td className="px-6 py-3 text-sm">{startIndex + index + 1}</td>
                     <td className="px-6 py-3 text-sm">{ref.year}</td>
@@ -542,64 +617,93 @@ export default function AddReferralPage() {
                     <td className="px-6 py-3 text-sm">
                       <span className={`px-2 py-1 rounded-full text-xs ${
                         ref.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
-                        ref.status === "Approved" ? "bg-green-100 text-green-800" :
-                        "bg-red-100 text-red-800"
+                        ref.status === "Ongoing" ? "bg-blue-100 text-blue-800" :
+                        ref.status === "Completed" ? "bg-green-100 text-green-800" :
+                        "bg-gray-100 text-gray-800"
                       }`}>
                         {ref.status}
                       </span>
                     </td>
                     <td className="px-6 py-3 text-sm">
-                      {ref.attachments && ref.attachments.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {ref.attachments.map((fileName, idx) => (
-                            <div key={idx} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
-                              <FileText size={12} className="text-gray-500" />
-                              <span className="text-xs truncate max-w-[100px]" title={fileName}>
-                                {fileName.length > 20 ? fileName.substring(0, 20) + '...' : fileName}
-                              </span>
-                              <button
-                                onClick={() => handleViewFile(fileName)}
-                                className="text-blue-500 hover:text-blue-700"
-                                title="View"
-                              >
-                                <Eye size={12} />
-                              </button>
-                              <button
-                                onClick={() => handleDownloadFile(fileName)}
-                                className="text-green-500 hover:text-green-700"
-                                title="Download"
-                              >
-                                <Download size={12} />
-                              </button>
-                            </div>
-                          ))}
+                      {ref.assignedTo ? (
+                        <div className="flex items-center gap-1">
+                          <UserCheck size={14} className="text-green-600" />
+                          <span>{ref.assignedTo.name}</span>
                         </div>
                       ) : (
-                        <span className="text-gray-400 text-xs">No files</span>
+                        <span className="text-gray-400 text-xs">Not assigned</span>
                       )}
                     </td>
-                    <td className="px-6 py-3 text-sm flex gap-2">
-                      <button
-                        onClick={() => handleEdit(ref)}
-                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                      >
-                        <Pencil size={14} /> Edit
+                    <td className="px-6 py-3 text-sm">
+                      {ref.attachments && ref.attachments.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {ref.attachments.slice(0, 2).map((fileName, idx) => (
+                            <div key={idx} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
+                              <FileText size={12} className="text-gray-500" />
+                              <span className="text-xs truncate max-w-[80px]" title={fileName}>
+                                {fileName.length > 15 ? fileName.substring(0, 15) + '...' : fileName}
+                              </span>
+                              <button onClick={() => handleViewFile(fileName)} className="text-blue-500 hover:text-blue-700"><Eye size={12} /></button>
+                              <button onClick={() => handleDownloadFile(fileName)} className="text-green-500 hover:text-green-700"><Download size={12} /></button>
+                            </div>
+                          ))}
+                          {ref.attachments.length > 2 && <span className="text-xs text-gray-500">+{ref.attachments.length - 2}</span>}
+                        </div>
+                      ) : <span className="text-gray-400 text-xs">No files</span>}
+                    </td>
+                    <td className="px-6 py-3 text-sm flex flex-wrap gap-2">
+                      {/* View details (all roles) */}
+                      <button onClick={() => openViewModal(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
+                        <Eye size={12} /> View
                       </button>
-                      <button
-                        onClick={() => handleDelete(ref)}
-                        className="flex items-center gap-2 px-3 py-1.5 border rounded-md text-xs font-medium hover:border-black transition"
-                      >
-                        <Trash2 size={14} /> Delete
-                      </button>
+                      {/* Edit (ACC only if not submitted) */}
+                      {canEdit && (
+                        <button onClick={() => {
+                          setEditData(ref);
+                          setFormData({
+                            year: ref.year,
+                            crn: ref.crn,
+                            alleged: ref.alleged,
+                            sharing_letter_no: ref.sharing_letter_no,
+                            referral_date: ref.referral_date?.split("T")[0] || "",
+                          });
+                          setExistingAttachments(ref.attachments || []);
+                          setAttachments([]);
+                          setShowForm(true);
+                        }} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
+                          <Pencil size={12} /> Edit
+                        </button>
+                      )}
+                      {/* Submit to RAA (ACC only if not submitted) */}
+                      {canSubmit && (
+                        <button onClick={() => handleSubmitToRAA(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-blue-600">
+                          <Send size={12} /> Submit
+                        </button>
+                      )}
+                      {/* Add Update (RAA only if submitted) */}
+                      {canUpdate && (
+                        <button onClick={() => openUpdateModal(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-purple-600">
+                          <Upload size={12} /> Update
+                        </button>
+                      )}
+                      {/* Assign (RAA admin only if submitted and not assigned) */}
+                      {canAssign && (
+                        <button onClick={() => openAssignModal(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
+                          <UserPlus size={12} /> Assign
+                        </button>
+                      )}
+                      {/* Delete (ACC only if not submitted) */}
+                      {canDelete && (
+                        <button onClick={() => handleDelete(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-red-500">
+                          <Trash2 size={12} /> Delete
+                        </button>
+                      )}
                     </td>
                   </tr>
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={9} className="text-center py-6 text-gray-500">
-                    No records found
-                  </td>
-                </tr>
+                );
+              })}
+              {paginatedReferrals.length === 0 && (
+                <tr><td colSpan={10} className="text-center py-6 text-gray-500">No records found</td></tr>
               )}
             </tbody>
           </table>
@@ -608,26 +712,182 @@ export default function AddReferralPage() {
         {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex justify-end items-center gap-4 mt-5 text-sm">
-            <button
-              disabled={currentPage === 1}
-              onClick={() => setCurrentPage(currentPage - 1)}
-              className={`font-semibold text-lg ${currentPage === 1 ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"}`}
-            >
-              &lt;
-            </button>
-            <span>
-              Page {currentPage} of {totalPages}
-            </span>
-            <button
-              disabled={currentPage === totalPages}
-              onClick={() => setCurrentPage(currentPage + 1)}
-              className={`font-semibold text-lg ${currentPage === totalPages ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"}`}
-            >
-              &gt;
-            </button>
+            <button disabled={currentPage === 1} onClick={() => setCurrentPage(currentPage - 1)} className={`font-semibold text-lg ${currentPage === 1 ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"}`}>&lt;</button>
+            <span>Page {currentPage} of {totalPages}</span>
+            <button disabled={currentPage === totalPages} onClick={() => setCurrentPage(currentPage + 1)} className={`font-semibold text-lg ${currentPage === totalPages ? "text-gray-400 cursor-not-allowed" : "hover:text-blue-600"}`}>&gt;</button>
           </div>
         )}
       </main>
+
+      {/* --- MODALS --- */}
+
+      {/* View Modal (details + updates timeline) */}
+      {viewModalOpen && viewReferral && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+              <h3 className="text-xl font-semibold">Referral Details & Updates</h3>
+              <button onClick={() => setViewModalOpen(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Referral fields (read-only) */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div><label className="text-sm font-medium">Year</label><p className="mt-1">{viewReferral.year}</p></div>
+                <div><label className="text-sm font-medium">CRN</label><p className="mt-1">{viewReferral.crn}</p></div>
+                <div><label className="text-sm font-medium">Alleged</label><p className="mt-1">{viewReferral.alleged}</p></div>
+                <div><label className="text-sm font-medium">Sharing Letter No</label><p className="mt-1">{viewReferral.sharing_letter_no}</p></div>
+                <div><label className="text-sm font-medium">Referral Date</label><p className="mt-1">{viewReferral.referral_date?.split("T")[0]}</p></div>
+                <div><label className="text-sm font-medium">Status</label><p className="mt-1">{viewReferral.status}</p></div>
+                <div><label className="text-sm font-medium">Assigned To</label><p className="mt-1">{viewReferral.assignedTo?.name || "Not assigned"}</p></div>
+              </div>
+              {/* Attachments */}
+              {viewReferral.attachments && viewReferral.attachments.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-2">Attachments</h4>
+                  <div className="space-y-2">
+                    {viewReferral.attachments.map((file, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded">
+                        <FileText size={14} className="text-gray-500" />
+                        <span>{file}</span>
+                        <button onClick={() => handleViewFile(file)} className="text-blue-500 ml-auto"><Eye size={14} /></button>
+                        <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* Updates timeline */}
+              {viewReferral.updates && viewReferral.updates.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-2">Updates</h4>
+                  <div className="space-y-4">
+                    {viewReferral.updates.map((upd, idx) => (
+                      <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded">
+                        <div className="flex justify-between">
+                          <span className="font-medium">Status: {upd.status}</span>
+                          <span className="text-xs text-gray-500">{new Date(upd.createdAt).toLocaleString()}</span>
+                        </div>
+                        <p className="text-sm mt-1">{upd.reply}</p>
+                        {upd.attachments && upd.attachments.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {upd.attachments.map((file) => (
+                              <div key={file} className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded">
+                                <FileText size={12} className="text-blue-500" />
+                                <span className="text-xs">{file}</span>
+                                <button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button>
+                                <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-400 mt-1">by {upd.updatedBy.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="sticky bottom-0 bg-gray-50 p-4 text-right border-t">
+              <button onClick={() => setViewModalOpen(false)} className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Update Modal (RAA) */}
+      {showUpdateModal && updateReferral && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full">
+            <div className="flex justify-between items-center p-6 border-b">
+              <h3 className="text-xl font-semibold">Add Update to Referral</h3>
+              <button onClick={() => setShowUpdateModal(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">Referral: <span className="font-medium">{updateReferral.crn}</span></p>
+              <div>
+                <label className="block text-sm font-medium mb-1">Status *</label>
+                <select name="status" value={updateForm.status} onChange={handleUpdateFormChange} className="w-full border rounded px-3 py-2">
+                  <option value="">Select status</option>
+                  <option value="Pending">Pending</option>
+                  <option value="Ongoing">Ongoing</option>
+                  <option value="Completed">Completed</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Reply *</label>
+                <textarea name="reply" value={updateForm.reply} onChange={handleUpdateFormChange} rows={4} className="w-full border rounded px-3 py-2" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Attachments (optional)</label>
+                <div className="flex items-center gap-2">
+                  <label className="cursor-pointer text-blue-600">
+                    <Upload size={16} />
+                    <input type="file" multiple onChange={handleUpdateFileSelect} className="hidden" />
+                  </label>
+                  <span className="text-xs text-gray-500">Upload additional files</span>
+                </div>
+                {updateAttachments.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    {updateAttachments.map((file, idx) => (
+                      <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded">
+                        <span className="text-sm">{file.name}</span>
+                        <button onClick={() => handleRemoveUpdateFile(idx)} className="text-red-500"><X size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-xl">
+              <button onClick={() => setShowUpdateModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
+              <button onClick={submitUpdate} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add Update</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Modal (RAA admin) */}
+      {showAssignModal && selectedReferral && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md">
+          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
+            <div className="flex justify-between items-center p-6 border-b">
+              <h3 className="text-xl font-semibold">Assign to RAA Officer</h3>
+              <button onClick={() => setShowAssignModal(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-4">Referral: <span className="font-medium">{selectedReferral.crn}</span></p>
+              <label className="block text-sm font-medium mb-1">Select Officer</label>
+              <select value={selectedOfficerId} onChange={(e) => setSelectedOfficerId(e.target.value)} className="w-full border rounded px-3 py-2">
+                <option value="">-- Choose officer --</option>
+                {officers.map((o) => <option key={o._id} value={o._id}>{o.name} ({o.email})</option>)}
+              </select>
+            </div>
+            <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-xl">
+              <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
+              <button onClick={handleAssign} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Assign</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
+
+  // ================== DELETE (helper) ==================
+  async function handleDelete(ref: Referral) {
+    if (!confirm(`Are you sure you want to delete "${ref.crn}"?`)) return;
+    try {
+      const token = getToken();
+      const res = await fetch("/api/acc-raa-referrals", {
+        method: "DELETE",
+        body: JSON.stringify({ _id: ref._id }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      await fetchReferrals();
+      showNotification("Referral deleted successfully");
+    } catch (error) {
+      showNotification((error as Error).message, "error");
+    }
+  }
 }

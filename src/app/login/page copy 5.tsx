@@ -41,41 +41,10 @@ function LoginForm() {
         return;
       }
 
-      // Super admin or agency admin → admin pending users
+      // Super admin or agency admin → admin pages
       if (data.isAdmin || data.isAgencyAdmin) {
         router.push("/admin/pending-users");
-        return;
-      }
-
-      // ------ Fetch profile to determine agency for regular users ------
-      try {
-        const profileRes = await fetch("/api/user/profile", {
-          headers: { Authorization: `Bearer ${data.token}` },
-        });
-
-        if (!profileRes.ok) {
-          router.push("/admin/acc-oag-referral");
-          return;
-        }
-
-        const profile = await profileRes.json();
-        const agency = (profile.agencyName || "").toLowerCase();
-
-        // Redirect based on agency
-        if (agency.includes("oag") || agency.includes("attorney general")) {
-          router.push("/admin/acc-oag-referral");
-        } else if (
-          agency.includes("royal audit") ||
-          agency.includes("audit authority") ||
-          agency.includes("raa")
-        ) {
-          router.push("/admin/raa-acc-referral");
-        } else if (agency.includes("acc") || agency.includes("anti-corruption")) {
-          router.push("/admin/acc-raa-referral");
-        } else {
-          router.push("/admin/acc-oag-referral"); // fallback
-        }
-      } catch {
+      } else {
         router.push("/admin/acc-oag-referral");
       }
     } catch {
