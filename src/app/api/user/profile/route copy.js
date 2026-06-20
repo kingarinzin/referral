@@ -10,8 +10,6 @@ export async function GET(req) {
   }
 
   let agencyName = "";
-  let departmentName = ""; // new
-
   if (user.agencyId) {
     try {
       const client = await clientPromise;
@@ -23,18 +21,6 @@ export async function GET(req) {
     }
   }
 
-  // ---- NEW: fetch department name ----
-  if (user.departmentId) {
-    try {
-      const client = await clientPromise;
-      const db = client.db("referral_db");
-      const department = await db.collection("departments").findOne({ _id: new ObjectId(user.departmentId) });
-      departmentName = department?.name || "";
-    } catch (err) {
-      console.error("Failed to fetch department name:", err);
-    }
-  }
-
   return NextResponse.json({
     _id: user._id.toString(),
     name: user.name,
@@ -43,7 +29,6 @@ export async function GET(req) {
     designation: user.designation,
     phone: user.phone,
     departmentId: user.departmentId,
-    departmentName: departmentName, // new field
     divisionId: user.divisionId,
     agencyId: user.agencyId,
     agencyName: agencyName,

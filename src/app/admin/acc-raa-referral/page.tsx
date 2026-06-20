@@ -1,10 +1,18 @@
 "use client";
 
-import React from "react";
-import { useState, useEffect, ChangeEvent } from "react";
-import { Trash2, Pencil, Save, Check, X, Plus, Upload, FileText, Download, Eye, Send, UserPlus, UserCheck, ChevronDown, ChevronUp } from "lucide-react";
+import React, { useState, useEffect, ChangeEvent, useMemo } from "react";
+import {
+  Trash2, Pencil, Save, Check, X, Plus, Upload, FileText, Download, Eye,
+  Send, UserPlus, UserCheck, ChevronDown, ChevronUp,
+  TrendingUp, PieChart as PieChartIcon, BarChart3
+} from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, AreaChart, Area
+} from "recharts";
 
+// ==================== TYPES ====================
 type Referral = {
   _id: string;
   year: string;
@@ -42,7 +50,10 @@ type FormData = {
 
 type Officer = { _id: string; name: string; email: string; role: string };
 
+const COLORS = ['#3B82F6', '#EF4444', '#F59E0B', '#10B981', '#8B5CF6'];
+
 export default function AccRaaReferralPage() {
+  // ----- State -----
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editData, setEditData] = useState<Referral | null>(null);
@@ -66,8 +77,6 @@ export default function AccRaaReferralPage() {
 
   // Expanded row state
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  // Update form state (used in expanded row)
   const [updateForm, setUpdateForm] = useState({ status: "", reply: "" });
   const [updateAttachments, setUpdateAttachments] = useState<File[]>([]);
 
@@ -174,7 +183,7 @@ export default function AccRaaReferralPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // ================== FILE HANDLERS (main form) ==================
+  // ================== FILE HANDLERS ==================
   const handleFileSelect = (e: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length) setAttachments(prev => [...prev, ...files]);
@@ -293,7 +302,7 @@ export default function AccRaaReferralPage() {
     }
   };
 
-  // ================== UPDATE (RAA) - used in expanded row ==================
+  // ================== UPDATE (inline) ==================
   const handleUpdateFormChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setUpdateForm(prev => ({ ...prev, [name]: value }));
@@ -332,7 +341,6 @@ export default function AccRaaReferralPage() {
       await fetchReferrals();
       setUpdateForm({ status: "", reply: "" });
       setUpdateAttachments([]);
-      // Collapse the expanded row after update (optional)
       setExpandedId(null);
       showNotification("Update added successfully");
     } catch (error) {
@@ -372,7 +380,6 @@ export default function AccRaaReferralPage() {
   // ================== TOGGLE EXPAND ==================
   const toggleExpand = (id: string) => {
     setExpandedId(prev => prev === id ? null : id);
-    // Reset update form when expanding a new row
     if (expandedId !== id) {
       setUpdateForm({ status: "", reply: "" });
       setUpdateAttachments([]);
@@ -395,6 +402,53 @@ export default function AccRaaReferralPage() {
     setRowsPerPage(Number(e.target.value));
     setCurrentPage(1);
   };
+
+  // ================== DASHBOARD COMPUTATIONS ==================
+  const total = referrals.length;
+  const pendingCount = referrals.filter(r => r.status === "Pending").length;
+  const ongoingCount = referrals.filter(r => r.status === "Ongoing").length;
+  const completedCount = referrals.filter(r => r.status === "Completed").length;
+  const submittedCount = referrals.filter(r => r.referredToRAA === true).length;
+  const assignedCount = referrals.filter(r => r.assignedTo !== null && r.assignedTo !== undefined).length;
+
+  const statusData = [
+    { name: 'Pending', value: pendingCount },
+    { name: 'Ongoing', value: ongoingCount },
+    { name: 'Completed', value: completedCount },
+  ].filter(d => d.value > 0);
+
+  // Category breakdown – by alleged type
+  const categoryCounts: Record<string, number> = {};
+  referrals.forEach(r => {
+    const cat = r.alleged || 'Unknown';
+    const short = cat.length > 20 ? cat.substring(0, 20) + '…' : cat;
+    categoryCounts[short] = (categoryCounts[short] || 0) + 1;
+  });
+  const categoryData = Object.entries(categoryCounts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+
+  // Trend: last 7 days
+  const trendData = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return d.toISOString().split('T')[0];
+    }).reverse();
+
+    return last7Days.map(date => ({
+      date,
+      count: referrals.filter(r => r.createdAt && r.createdAt.startsWith(date)).length
+    }));
+  }, [referrals]);
+
+  // Recent 5 records
+  const recentRecords = [...referrals]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
+
+  // =============================================
 
   const filteredReferrals = referrals.filter(
     (ref) =>
@@ -444,6 +498,24 @@ export default function AccRaaReferralPage() {
     );
   }
 
+  // ================== DELETE ==================
+  const handleDelete = async (ref: Referral) => {
+    if (!confirm(`Are you sure you want to delete "${ref.crn}"?`)) return;
+    try {
+      const token = getToken();
+      const res = await fetch("/api/acc-raa-referrals", {
+        method: "DELETE",
+        body: JSON.stringify({ _id: ref._id }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      await fetchReferrals();
+      showNotification("Referral deleted successfully");
+    } catch (error) {
+      showNotification((error as Error).message, "error");
+    }
+  };
+
   return (
     <div className="flex">
       <Sidebar />
@@ -461,6 +533,166 @@ export default function AccRaaReferralPage() {
             </button>
           )}
         </div>
+
+        {/* ====== DASHBOARD ====== */}
+        <div className="mb-6">
+          {/* KPI Strip */}
+          <div className="bg-white rounded-xl shadow-sm px-4 py-2 mb-4 flex flex-wrap items-center justify-around gap-3 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+              <span className="text-gray-600">Total:</span>
+              <span className="font-bold text-gray-800">{total}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+              <span className="text-gray-600">Pending:</span>
+              <span className="font-bold text-gray-800">{pendingCount}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+              <span className="text-gray-600">Ongoing:</span>
+              <span className="font-bold text-gray-800">{ongoingCount}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500"></span>
+              <span className="text-gray-600">Completed:</span>
+              <span className="font-bold text-gray-800">{completedCount}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+              <span className="text-gray-600">Submitted:</span>
+              <span className="font-bold text-gray-800">{submittedCount}</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+              <span className="text-gray-600">Assigned:</span>
+              <span className="font-bold text-gray-800">{assignedCount}</span>
+            </div>
+          </div>
+
+          {/* Charts Row */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            {/* Status Pie Chart */}
+            <div className="bg-white rounded-xl shadow p-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <PieChartIcon size={16} /> Status Distribution
+              </h3>
+              {statusData.length === 0 ? (
+                <div className="h-[180px] flex items-center justify-center text-gray-400">
+                  No data to display
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie
+                      data={statusData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={35}
+                      outerRadius={65}
+                      fill="#8884d8"
+                      paddingAngle={2}
+                      dataKey="value"
+                      label={({ name, percent = 0 }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                    >
+                      {statusData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+
+            {/* Category Bar Chart */}
+            <div className="bg-white rounded-xl shadow p-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                <BarChart3 size={16} /> Top Alleged Categories
+              </h3>
+              {categoryData.length === 0 ? (
+                <div className="h-[180px] flex items-center justify-center text-gray-400">
+                  No data to display
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart
+                    data={categoryData}
+                    layout="vertical"
+                    margin={{ left: 80, right: 20, top: 5, bottom: 5 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" />
+                    <YAxis dataKey="name" type="category" width={70} tick={{ fontSize: 10 }} tickLine={false} axisLine={false} />
+                    <Tooltip formatter={(value, name, props) => [value, props.payload.name]} />
+                    <Bar dataKey="value" fill="#3B82F6" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+
+          {/* Trend Chart */}
+          <div className="bg-white rounded-xl shadow p-4 mb-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+              <TrendingUp size={16} /> Referrals Created (Last 7 Days)
+            </h3>
+            <ResponsiveContainer width="100%" height={130}>
+              <AreaChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Area type="monotone" dataKey="count" stroke="#3B82F6" fill="#93C5FD" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Recent Activity Table */}
+          <div className="bg-white rounded-xl shadow p-4">
+            <h3 className="text-sm font-medium text-gray-700 mb-3">Recent Activity</h3>
+            {recentRecords.length === 0 ? (
+              <p className="text-gray-500 text-sm">No recent records.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-200">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase">CRN</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase">Alleged</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase">Status</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium uppercase">Created</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {recentRecords.map((rec) => (
+                      <tr key={rec._id} className="hover:bg-gray-50">
+                        <td className="px-4 py-2 text-sm">{rec.crn}</td>
+                        <td className="px-4 py-2 text-sm truncate max-w-[150px]">{rec.alleged}</td>
+                        <td className="px-4 py-2 text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            rec.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
+                            rec.status === "Ongoing" ? "bg-blue-100 text-blue-800" :
+                            rec.status === "Completed" ? "bg-green-100 text-green-800" :
+                            "bg-gray-100 text-gray-800"
+                          }`}>
+                            {rec.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2 text-sm text-gray-500">
+                          {new Date(rec.createdAt).toLocaleDateString('en-GB', {
+                            day: '2-digit', month: 'short', year: 'numeric'
+                          })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+        {/* ====== END DASHBOARD ====== */}
 
         {/* Notification */}
         {notification && (
@@ -607,7 +839,6 @@ export default function AccRaaReferralPage() {
 
                 return (
                   <React.Fragment key={ref._id}>
-                    {/* Main row */}
                     <tr className="hover:bg-gray-100 transition-colors">
                       <td className="px-6 py-3 text-sm">{startIndex + index + 1}</td>
                       <td className="px-6 py-3 text-sm">{ref.year}</td>
@@ -653,7 +884,6 @@ export default function AccRaaReferralPage() {
                         ) : <span className="text-gray-400 text-xs">No files</span>}
                       </td>
                       <td className="px-6 py-3 text-sm flex flex-wrap gap-2">
-                        {/* View & Update / View toggle */}
                         {isRaaUser && isSubmitted ? (
                           <button
                             onClick={() => toggleExpand(ref._id)}
@@ -675,7 +905,6 @@ export default function AccRaaReferralPage() {
                             {isExpanded ? "Hide" : "View"}
                           </button>
                         )}
-                        {/* Edit (ACC only if not submitted) */}
                         {canEdit && (
                           <button onClick={() => {
                             setEditData(ref);
@@ -693,19 +922,16 @@ export default function AccRaaReferralPage() {
                             <Pencil size={12} /> Edit
                           </button>
                         )}
-                        {/* Submit to RAA (ACC only if not submitted) */}
                         {canSubmit && (
                           <button onClick={() => handleSubmitToRAA(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-blue-600">
                             <Send size={12} /> Submit
                           </button>
                         )}
-                        {/* Assign (RAA admin only if submitted and not assigned) */}
                         {canAssign && (
                           <button onClick={() => openAssignModal(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
                             <UserPlus size={12} /> Assign
                           </button>
                         )}
-                        {/* Delete (ACC only if not submitted) */}
                         {canDelete && (
                           <button onClick={() => handleDelete(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-red-500">
                             <Trash2 size={12} /> Delete
@@ -778,7 +1004,7 @@ export default function AccRaaReferralPage() {
                               </div>
                             )}
 
-                            {/* Update form (only for RAA, submitted) */}
+                            {/* Update form (RAA only) */}
                             {isRaaUser && isSubmitted && (
                               <div className="border-t pt-4 mt-4">
                                 <h4 className="font-semibold mb-3">Add Update</h4>
@@ -868,7 +1094,7 @@ export default function AccRaaReferralPage() {
         )}
       </main>
 
-      {/* Assign Modal (still modal) */}
+      {/* Assign Modal */}
       {showAssignModal && selectedReferral && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md">
           <div className="bg-white rounded-xl shadow-2xl max-w-md w-full">
@@ -893,22 +1119,4 @@ export default function AccRaaReferralPage() {
       )}
     </div>
   );
-
-  // ================== DELETE (helper) ==================
-  async function handleDelete(ref: Referral) {
-    if (!confirm(`Are you sure you want to delete "${ref.crn}"?`)) return;
-    try {
-      const token = getToken();
-      const res = await fetch("/api/acc-raa-referrals", {
-        method: "DELETE",
-        body: JSON.stringify({ _id: ref._id }),
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to delete");
-      await fetchReferrals();
-      showNotification("Referral deleted successfully");
-    } catch (error) {
-      showNotification((error as Error).message, "error");
-    }
-  }
 }

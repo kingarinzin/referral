@@ -1,10 +1,18 @@
 "use client";
 
-import React from "react";
-import { useState, useEffect, ChangeEvent, Fragment } from "react";
-import { Trash2, Pencil, Save, Check, X, Plus, Upload, FileText, Download, Eye, Maximize2, Copy, Send, UserPlus, UserCheck, ChevronDown, ChevronUp } from "lucide-react";
+import React, { useState, useEffect, ChangeEvent, useMemo, Fragment } from "react";
+import {
+  Trash2, Pencil, Save, Check, X, Plus, Upload, FileText, Download, Eye,
+  Maximize2, Copy, Send, UserPlus, UserCheck, ChevronDown, ChevronUp,
+  TrendingUp, PieChart as PieChartIcon, BarChart3
+} from "lucide-react";
 import Sidebar from "@/components/Sidebar";
+import {
+  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, AreaChart, Area
+} from "recharts";
 
+// ==================== TYPES ====================
 type Referral = {
   _id: string;
   year: string;
@@ -49,7 +57,10 @@ type FormData = {
 
 type Officer = { _id: string; name: string; email: string; role: string };
 
+const COLORS = ['#3B82F6', '#EF4444', '#F59E0B', '#10B981', '#8B5CF6'];
+
 export default function RaaAccReferralPage() {
+  // ----- State -----
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [editData, setEditData] = useState<Referral | null>(null);
@@ -75,10 +86,8 @@ export default function RaaAccReferralPage() {
   const [selectedReferral, setSelectedReferral] = useState<Referral | null>(null);
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
 
-  // Expanded row state
+  // Expanded row
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  // Update form state
   const [updateForm, setUpdateForm] = useState({ status: "", reply: "" });
   const [updateAttachments, setUpdateAttachments] = useState<File[]>([]);
 
@@ -188,7 +197,7 @@ export default function RaaAccReferralPage() {
     setTimeout(() => setNotification(null), 3000);
   };
 
-  // ================== CHECK EXISTING AIN ==================
+  // ================== DUPLICATE AIN LOGIC ==================
   const checkExistingAIN = async (ain: string) => {
     if (!ain) return null;
     try {
@@ -359,7 +368,7 @@ export default function RaaAccReferralPage() {
     }
   };
 
-  // ================== UPDATE (ACC) ==================
+  // ================== UPDATE (inline) ==================
   const handleUpdateFormChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setUpdateForm(prev => ({ ...prev, [name]: value }));
@@ -443,6 +452,51 @@ export default function RaaAccReferralPage() {
     }
   };
 
+  // ================== DASHBOARD COMPUTATIONS ==================
+  const total = referrals.length;
+  const pendingCount = referrals.filter(r => r.status === "Pending").length;
+  const ongoingCount = referrals.filter(r => r.status === "Ongoing").length;
+  const completedCount = referrals.filter(r => r.status === "Completed").length;
+  const submittedCount = referrals.filter(r => r.referredToACC === true).length;
+  const assignedCount = referrals.filter(r => r.assignedTo !== null && r.assignedTo !== undefined).length;
+
+  const statusData = [
+    { name: 'Pending', value: pendingCount },
+    { name: 'Ongoing', value: ongoingCount },
+    { name: 'Completed', value: completedCount },
+  ].filter(d => d.value > 0);
+
+  // Category breakdown – using accountability_entity
+  const categoryCounts: Record<string, number> = {};
+  referrals.forEach(r => {
+    const cat = r.accountability_entity || r.acc_observation || 'Unknown';
+    const short = cat.length > 20 ? cat.substring(0, 20) + '…' : cat;
+    categoryCounts[short] = (categoryCounts[short] || 0) + 1;
+  });
+  const categoryData = Object.entries(categoryCounts)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 6);
+
+  // Trend: last 7 days
+  const trendData = useMemo(() => {
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      return d.toISOString().split('T')[0];
+    }).reverse();
+
+    return last7Days.map(date => ({
+      date,
+      count: referrals.filter(r => r.createdAt && r.createdAt.startsWith(date)).length
+    }));
+  }, [referrals]);
+
+  // Recent 5 records
+  const recentRecords = [...referrals]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
+
   // ================== SORT & SEARCH ==================
   const handleSort = (key: keyof Referral) => {
     let direction: "asc" | "desc" = "asc";
@@ -468,6 +522,7 @@ export default function RaaAccReferralPage() {
       (ref.accountability_entity?.toLowerCase() || "").includes(search.toLowerCase())
   );
 
+  // Grouping by AIN (existing logic)
   const groupedReferrals = filteredReferrals.reduce((acc, ref) => {
     const ain = ref.ain;
     if (!acc[ain]) acc[ain] = [];
@@ -541,6 +596,24 @@ export default function RaaAccReferralPage() {
     );
   }
 
+  // ================== DELETE ==================
+  const handleDelete = async (ref: Referral) => {
+    if (!confirm(`Are you sure you want to delete "${ref.ain}"?`)) return;
+    try {
+      const token = getToken();
+      const res = await fetch("/api/raa-acc-referrals", {
+        method: "DELETE",
+        body: JSON.stringify({ _id: ref._id }),
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("Failed to delete");
+      await fetchReferrals();
+      showNotification("Referral deleted successfully");
+    } catch (error) {
+      showNotification((error as Error).message, "error");
+    }
+  };
+
   return (
     <>
       <div className={`flex ${selectedView ? 'overflow-hidden h-screen' : ''}`}>
@@ -560,6 +633,154 @@ export default function RaaAccReferralPage() {
                 </button>
               )}
             </div>
+
+            {/* ====== DASHBOARD ====== */}
+            <div className="mb-6">
+              {/* KPI Strip */}
+              <div className="bg-white rounded-xl shadow-sm px-4 py-2 mb-4 flex flex-wrap items-center justify-around gap-3 text-sm">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  <span className="text-gray-600">Total:</span>
+                  <span className="font-bold text-gray-800">{total}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-yellow-500"></span>
+                  <span className="text-gray-600">Pending:</span>
+                  <span className="font-bold text-gray-800">{pendingCount}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                  <span className="text-gray-600">Ongoing:</span>
+                  <span className="font-bold text-gray-800">{ongoingCount}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                  <span className="text-gray-600">Completed:</span>
+                  <span className="font-bold text-gray-800">{completedCount}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                  <span className="text-gray-600">Submitted:</span>
+                  <span className="font-bold text-gray-800">{submittedCount}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-teal-500"></span>
+                  <span className="text-gray-600">Assigned:</span>
+                  <span className="font-bold text-gray-800">{assignedCount}</span>
+                </div>
+              </div>
+
+              {/* Charts Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                {/* Status Pie */}
+                <div className="bg-white rounded-xl shadow p-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <PieChartIcon size={16} /> Status Distribution
+                  </h3>
+                  {statusData.length === 0 ? (
+                    <div className="h-[180px] flex items-center justify-center text-gray-400">No data</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={180}>
+                      <PieChart>
+                        <Pie
+                          data={statusData}
+                          cx="50%" cy="50%"
+                          innerRadius={35} outerRadius={65}
+                          dataKey="value"
+                          label={({ name, percent = 0 }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                        >
+                          {statusData.map((_, idx) => <Cell key={idx} fill={COLORS[idx % COLORS.length]} />)}
+                        </Pie>
+                        <Tooltip />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+
+                {/* Category Bar */}
+                <div className="bg-white rounded-xl shadow p-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                    <BarChart3 size={16} /> Top Categories
+                  </h3>
+                  {categoryData.length === 0 ? (
+                    <div className="h-[180px] flex items-center justify-center text-gray-400">No data</div>
+                  ) : (
+                    <ResponsiveContainer width="100%" height={180}>
+                      <BarChart
+                        data={categoryData}
+                        layout="vertical"
+                        margin={{ left: 80, right: 20, top: 5, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                        <XAxis type="number" />
+                        <YAxis dataKey="name" type="category" width={70} tick={{ fontSize: 10 }} />
+                        <Tooltip />
+                        <Bar dataKey="value" fill="#3B82F6" radius={[0,4,4,0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  )}
+                </div>
+              </div>
+
+              {/* Trend */}
+              <div className="bg-white rounded-xl shadow p-4 mb-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-2">
+                  <TrendingUp size={16} /> Referrals Created (Last 7 Days)
+                </h3>
+                <ResponsiveContainer width="100%" height={130}>
+                  <AreaChart data={trendData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10 }} />
+                    <Tooltip />
+                    <Area type="monotone" dataKey="count" stroke="#3B82F6" fill="#93C5FD" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Recent Activity */}
+              <div className="bg-white rounded-xl shadow p-4">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">Recent Activity</h3>
+                {recentRecords.length === 0 ? (
+                  <p className="text-gray-500 text-sm">No recent records.</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">AIN</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Entity</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Status</th>
+                          <th className="px-4 py-2 text-left text-xs font-medium uppercase">Created</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200">
+                        {recentRecords.map((rec) => (
+                          <tr key={rec._id} className="hover:bg-gray-50">
+                            <td className="px-4 py-2 text-sm">{rec.ain}</td>
+                            <td className="px-4 py-2 text-sm truncate max-w-[150px]">{rec.accountability_entity}</td>
+                            <td className="px-4 py-2 text-sm">
+                              <span className={`px-2 py-1 rounded-full text-xs ${
+                                rec.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
+                                rec.status === "Ongoing" ? "bg-blue-100 text-blue-800" :
+                                rec.status === "Completed" ? "bg-green-100 text-green-800" :
+                                "bg-gray-100 text-gray-800"
+                              }`}>
+                                {rec.status}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2 text-sm text-gray-500">
+                              {new Date(rec.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* ====== END DASHBOARD ====== */}
 
             {/* Notification */}
             {notification && (
@@ -900,7 +1121,6 @@ export default function RaaAccReferralPage() {
                           <tr>
                             <td colSpan={13} className="px-4 py-4 bg-gray-50">
                               <div className="space-y-6">
-                                {/* Details */}
                                 <div className="grid md:grid-cols-2 gap-4">
                                   <div><label className="text-sm font-medium">Year</label><p className="mt-1">{ref.year}</p></div>
                                   <div><label className="text-sm font-medium">AIN</label><p className="mt-1">{ref.ain}</p></div>
@@ -914,7 +1134,6 @@ export default function RaaAccReferralPage() {
                                   <div><label className="text-sm font-medium">Assigned To</label><p className="mt-1">{ref.assignedTo?.name || "Not assigned"}</p></div>
                                 </div>
 
-                                {/* Attachments */}
                                 {ref.attachments && ref.attachments.length > 0 && (
                                   <div>
                                     <h4 className="font-semibold mb-2">Attachments</h4>
@@ -931,7 +1150,6 @@ export default function RaaAccReferralPage() {
                                   </div>
                                 )}
 
-                                {/* Updates */}
                                 {ref.updates && ref.updates.length > 0 && (
                                   <div>
                                     <h4 className="font-semibold mb-2">Updates</h4>
@@ -962,7 +1180,6 @@ export default function RaaAccReferralPage() {
                                   </div>
                                 )}
 
-                                {/* Update form (ACC only) */}
                                 {isAccUser && isSubmitted && (
                                   <div className="border-t pt-4 mt-4">
                                     <h4 className="font-semibold mb-3">Add Update</h4>
@@ -1012,18 +1229,8 @@ export default function RaaAccReferralPage() {
                                         )}
                                       </div>
                                       <div className="flex justify-end gap-3">
-                                        <button
-                                          onClick={() => toggleExpand(ref._id)}
-                                          className="px-4 py-2 border rounded-md hover:bg-gray-50"
-                                        >
-                                          Cancel
-                                        </button>
-                                        <button
-                                          onClick={() => submitUpdate(ref._id)}
-                                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                                        >
-                                          Add Update
-                                        </button>
+                                        <button onClick={() => toggleExpand(ref._id)} className="px-4 py-2 border rounded-md hover:bg-gray-50">Cancel</button>
+                                        <button onClick={() => submitUpdate(ref._id)} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add Update</button>
                                       </div>
                                     </div>
                                   </div>
@@ -1101,22 +1308,4 @@ export default function RaaAccReferralPage() {
       `}</style>
     </>
   );
-
-  // ================== DELETE (helper) ==================
-  async function handleDelete(ref: Referral) {
-    if (!confirm(`Are you sure you want to delete "${ref.ain}"?`)) return;
-    try {
-      const token = getToken();
-      const res = await fetch("/api/raa-acc-referrals", {
-        method: "DELETE",
-        body: JSON.stringify({ _id: ref._id }),
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to delete");
-      await fetchReferrals();
-      showNotification("Referral deleted successfully");
-    } catch (error) {
-      showNotification((error as Error).message, "error");
-    }
-  }
 }
