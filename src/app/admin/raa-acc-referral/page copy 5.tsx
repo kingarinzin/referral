@@ -1,8 +1,7 @@
 "use client";
 
-import React from "react";
-import { useState, useEffect, ChangeEvent, Fragment } from "react";
-import { Trash2, Pencil, Save, Check, X, Plus, Upload, FileText, Download, Eye, Maximize2, Copy, Send, UserPlus, UserCheck, ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useEffect, ChangeEvent } from "react";
+import { Trash2, Pencil, Save, Check, X, Plus, Upload, FileText, Download, Eye, Maximize2, Copy, Send, UserPlus, UserCheck } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 type Referral = {
@@ -74,11 +73,8 @@ export default function RaaAccReferralPage() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedReferral, setSelectedReferral] = useState<Referral | null>(null);
   const [selectedOfficerId, setSelectedOfficerId] = useState("");
-
-  // Expanded row state
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-
-  // Update form state
+  const [viewUpdateModalOpen, setViewUpdateModalOpen] = useState(false);
+  const [currentViewReferral, setCurrentViewReferral] = useState<Referral | null>(null);
   const [updateForm, setUpdateForm] = useState({ status: "", reply: "" });
   const [updateAttachments, setUpdateAttachments] = useState<File[]>([]);
 
@@ -375,7 +371,8 @@ export default function RaaAccReferralPage() {
     setUpdateAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
-  const submitUpdate = async (referralId: string) => {
+  const submitUpdate = async () => {
+    if (!currentViewReferral) return;
     if (!updateForm.status || !updateForm.reply) {
       showNotification("Status and reply are required", "error");
       return;
@@ -383,7 +380,7 @@ export default function RaaAccReferralPage() {
 
     try {
       const body = new FormData();
-      body.append("referralId", referralId);
+      body.append("referralId", currentViewReferral._id);
       body.append("status", updateForm.status);
       body.append("reply", updateForm.reply);
       updateAttachments.forEach(file => body.append("attachments", file));
@@ -396,9 +393,9 @@ export default function RaaAccReferralPage() {
       });
       if (!res.ok) throw new Error("Failed to add update");
       await fetchReferrals();
+      setViewUpdateModalOpen(false);
       setUpdateForm({ status: "", reply: "" });
       setUpdateAttachments([]);
-      setExpandedId(null);
       showNotification("Update added successfully");
     } catch (error) {
       showNotification((error as Error).message, "error");
@@ -434,13 +431,12 @@ export default function RaaAccReferralPage() {
     }
   };
 
-  // ================== TOGGLE EXPAND ==================
-  const toggleExpand = (id: string) => {
-    setExpandedId(prev => prev === id ? null : id);
-    if (expandedId !== id) {
-      setUpdateForm({ status: "", reply: "" });
-      setUpdateAttachments([]);
-    }
+  // ================== OPEN COMBINED VIEW & UPDATE ==================
+  const openViewUpdateModal = (ref: Referral) => {
+    setCurrentViewReferral(ref);
+    setUpdateForm({ status: "", reply: "" });
+    setUpdateAttachments([]);
+    setViewUpdateModalOpen(true);
   };
 
   // ================== SORT & SEARCH ==================
@@ -763,276 +759,132 @@ export default function RaaAccReferralPage() {
                     const canSubmit = isRaaUser && !isSubmitted;
                     const canUpdate = isAccUser && isSubmitted;
                     const canAssign = isAccAdmin && isSubmitted && !isAssigned;
-                    const isExpanded = expandedId === ref._id;
+                    const showViewUpdate = isAccUser && isSubmitted;
+                    const showViewOnly = !showViewUpdate;
 
                     return (
-                      <Fragment key={ref._id}>
-                        <tr className="hover:bg-gray-100 transition-colors">
-                          <td className="px-4 py-3 text-sm">{startIndex + idx + 1}</td>
-                          <td className="px-4 py-3 text-sm">{ref.year}</td>
-                          <td className="px-4 py-3 text-sm font-mono">{ref.ain}</td>
-                          <td className="px-4 py-3 text-sm">{ref.para_no}</td>
-                          <td className="px-4 py-3 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-600 max-w-[150px] truncate">{ref.accountability_entity?.substring(0, 40) || '-'}</span>
-                              {ref.accountability_entity && ref.accountability_entity.length > 40 && (
-                                <button onClick={() => setSelectedView({ type: 'entity', data: ref.accountability_entity })} className="text-blue-500 hover:text-blue-700"><Maximize2 size={14} /></button>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-600 max-w-[200px] truncate">{ref.audit_report?.substring(0, 50) || '-'}</span>
-                              {ref.audit_report && ref.audit_report.length > 50 && (
-                                <button onClick={() => setSelectedView({ type: 'audit', data: ref.audit_report })} className="text-blue-500 hover:text-blue-700"><Maximize2 size={14} /></button>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-600 max-w-[200px] truncate">{ref.acc_observation?.substring(0, 50) || '-'}</span>
-                              {ref.acc_observation && ref.acc_observation.length > 50 && (
-                                <button onClick={() => setSelectedView({ type: 'acc', data: ref.acc_observation })} className="text-blue-500 hover:text-blue-700"><Maximize2 size={14} /></button>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-sm">{ref.referral_no}</td>
-                          <td className="px-4 py-3 text-sm">{ref.referral_date?.split("T")[0]}</td>
-                          <td className="px-4 py-3 text-sm">
-                            <span className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${
-                              ref.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
-                              ref.status === "Ongoing" ? "bg-blue-100 text-blue-800" :
-                              ref.status === "Completed" ? "bg-green-100 text-green-800" :
-                              "bg-gray-100 text-gray-800"
-                            }`}>
-                              {ref.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            {ref.assignedTo ? (
-                              <div className="flex items-center gap-1">
-                                <UserCheck size={14} className="text-green-600" />
-                                <span>{ref.assignedTo.name}</span>
-                              </div>
-                            ) : (
-                              <span className="text-gray-400 text-xs">Not assigned</span>
+                      <tr key={ref._id} className="hover:bg-gray-100 transition-colors">
+                        <td className="px-4 py-3 text-sm">{startIndex + idx + 1}</td>
+                        <td className="px-4 py-3 text-sm">{ref.year}</td>
+                        <td className="px-4 py-3 text-sm font-mono">{ref.ain}</td>
+                        <td className="px-4 py-3 text-sm">{ref.para_no}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-600 max-w-[150px] truncate">{ref.accountability_entity?.substring(0, 40) || '-'}</span>
+                            {ref.accountability_entity && ref.accountability_entity.length > 40 && (
+                              <button onClick={() => setSelectedView({ type: 'entity', data: ref.accountability_entity })} className="text-blue-500 hover:text-blue-700"><Maximize2 size={14} /></button>
                             )}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            {ref.attachments && ref.attachments.length > 0 ? (
-                              <div className="flex flex-wrap gap-2">
-                                {ref.attachments.slice(0, 2).map((fileName, idx) => (
-                                  <div key={idx} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
-                                    <FileText size={12} className="text-gray-500" />
-                                    <span className="text-xs truncate max-w-[80px]" title={fileName}>{fileName.length > 15 ? fileName.substring(0, 15) + '...' : fileName}</span>
-                                    <button onClick={() => handleViewFile(fileName)} className="text-blue-500 hover:text-blue-700"><Eye size={12} /></button>
-                                    <button onClick={() => handleDownloadFile(fileName)} className="text-green-500 hover:text-green-700"><Download size={12} /></button>
-                                  </div>
-                                ))}
-                                {ref.attachments.length > 2 && <span className="text-xs text-gray-500">+{ref.attachments.length - 2}</span>}
-                              </div>
-                            ) : <span className="text-gray-400 text-xs">No files</span>}
-                          </td>
-                          <td className="px-4 py-3 text-sm">
-                            <div className="flex flex-wrap gap-2">
-                              {isAccUser && isSubmitted ? (
-                                <button
-                                  onClick={() => toggleExpand(ref._id)}
-                                  className={`flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black transition ${
-                                    isExpanded ? "bg-blue-50 text-blue-600" : "text-purple-600"
-                                  }`}
-                                >
-                                  {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                                  {isExpanded ? "Hide" : "View & Update"}
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => toggleExpand(ref._id)}
-                                  className={`flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black transition ${
-                                    isExpanded ? "bg-blue-50 text-blue-600" : ""
-                                  }`}
-                                >
-                                  {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                                  {isExpanded ? "Hide" : "View"}
-                                </button>
-                              )}
-                              {canEdit && (
-                                <button onClick={() => {
-                                  setEditData(ref);
-                                  setFormData({
-                                    year: ref.year,
-                                    ain: ref.ain,
-                                    para_no: ref.para_no,
-                                    accountability_entity: ref.accountability_entity,
-                                    audit_report: ref.audit_report,
-                                    acc_observation: ref.acc_observation,
-                                    referral_no: ref.referral_no,
-                                    referral_date: ref.referral_date?.split("T")[0] || "",
-                                  });
-                                  setExistingAttachments(ref.attachments || []);
-                                  setAttachments([]);
-                                  setShowForm(true);
-                                }} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
-                                  <Pencil size={12} /> Edit
-                                </button>
-                              )}
-                              {canSubmit && (
-                                <button onClick={() => handleSubmitToACC(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-blue-600">
-                                  <Send size={12} /> Submit
-                                </button>
-                              )}
-                              {canAssign && (
-                                <button onClick={() => openAssignModal(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
-                                  <UserPlus size={12} /> Assign
-                                </button>
-                              )}
-                              {canDelete && (
-                                <button onClick={() => handleDelete(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-red-500">
-                                  <Trash2 size={12} /> Delete
-                                </button>
-                              )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-600 max-w-[200px] truncate">{ref.audit_report?.substring(0, 50) || '-'}</span>
+                            {ref.audit_report && ref.audit_report.length > 50 && (
+                              <button onClick={() => setSelectedView({ type: 'audit', data: ref.audit_report })} className="text-blue-500 hover:text-blue-700"><Maximize2 size={14} /></button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex items-center gap-2">
+                            <span className="text-gray-600 max-w-[200px] truncate">{ref.acc_observation?.substring(0, 50) || '-'}</span>
+                            {ref.acc_observation && ref.acc_observation.length > 50 && (
+                              <button onClick={() => setSelectedView({ type: 'acc', data: ref.acc_observation })} className="text-blue-500 hover:text-blue-700"><Maximize2 size={14} /></button>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm">{ref.referral_no}</td>
+                        <td className="px-4 py-3 text-sm">{ref.referral_date?.split("T")[0]}</td>
+                        <td className="px-4 py-3 text-sm">
+                          <span className={`px-2 py-1 rounded-full text-xs whitespace-nowrap ${
+                            ref.status === "Pending" ? "bg-yellow-100 text-yellow-800" :
+                            ref.status === "Ongoing" ? "bg-blue-100 text-blue-800" :
+                            ref.status === "Completed" ? "bg-green-100 text-green-800" :
+                            "bg-gray-100 text-gray-800"
+                          }`}>
+                            {ref.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {ref.assignedTo ? (
+                            <div className="flex items-center gap-1">
+                              <UserCheck size={14} className="text-green-600" />
+                              <span>{ref.assignedTo.name}</span>
                             </div>
-                          </td>
-                        </tr>
-
-                        {/* Expanded row */}
-                        {isExpanded && (
-                          <tr>
-                            <td colSpan={13} className="px-4 py-4 bg-gray-50">
-                              <div className="space-y-6">
-                                {/* Details */}
-                                <div className="grid md:grid-cols-2 gap-4">
-                                  <div><label className="text-sm font-medium">Year</label><p className="mt-1">{ref.year}</p></div>
-                                  <div><label className="text-sm font-medium">AIN</label><p className="mt-1">{ref.ain}</p></div>
-                                  <div><label className="text-sm font-medium">Para No</label><p className="mt-1">{ref.para_no}</p></div>
-                                  <div><label className="text-sm font-medium">Accountability Entity</label><p className="mt-1">{ref.accountability_entity}</p></div>
-                                  <div className="md:col-span-2"><label className="text-sm font-medium">Audit Report</label><p className="mt-1 whitespace-pre-wrap">{ref.audit_report}</p></div>
-                                  <div className="md:col-span-2"><label className="text-sm font-medium">ACC Observation</label><p className="mt-1 whitespace-pre-wrap">{ref.acc_observation}</p></div>
-                                  <div><label className="text-sm font-medium">Referral No</label><p className="mt-1">{ref.referral_no}</p></div>
-                                  <div><label className="text-sm font-medium">Referral Date</label><p className="mt-1">{ref.referral_date?.split("T")[0]}</p></div>
-                                  <div><label className="text-sm font-medium">Status</label><p className="mt-1">{ref.status}</p></div>
-                                  <div><label className="text-sm font-medium">Assigned To</label><p className="mt-1">{ref.assignedTo?.name || "Not assigned"}</p></div>
+                          ) : (
+                            <span className="text-gray-400 text-xs">Not assigned</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          {ref.attachments && ref.attachments.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {ref.attachments.slice(0, 2).map((fileName, idx) => (
+                                <div key={idx} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded">
+                                  <FileText size={12} className="text-gray-500" />
+                                  <span className="text-xs truncate max-w-[80px]" title={fileName}>{fileName.length > 15 ? fileName.substring(0, 15) + '...' : fileName}</span>
+                                  <button onClick={() => handleViewFile(fileName)} className="text-blue-500 hover:text-blue-700"><Eye size={12} /></button>
+                                  <button onClick={() => handleDownloadFile(fileName)} className="text-green-500 hover:text-green-700"><Download size={12} /></button>
                                 </div>
-
-                                {/* Attachments */}
-                                {ref.attachments && ref.attachments.length > 0 && (
-                                  <div>
-                                    <h4 className="font-semibold mb-2">Attachments</h4>
-                                    <div className="space-y-2">
-                                      {ref.attachments.map((file, idx) => (
-                                        <div key={idx} className="flex items-center gap-2 bg-white p-2 rounded border">
-                                          <FileText size={14} className="text-gray-500" />
-                                          <span>{file}</span>
-                                          <button onClick={() => handleViewFile(file)} className="text-blue-500 ml-auto"><Eye size={14} /></button>
-                                          <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={14} /></button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Updates */}
-                                {ref.updates && ref.updates.length > 0 && (
-                                  <div>
-                                    <h4 className="font-semibold mb-2">Updates</h4>
-                                    <div className="space-y-4">
-                                      {ref.updates.map((upd, idx) => (
-                                        <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2 bg-white rounded">
-                                          <div className="flex justify-between">
-                                            <span className="font-medium">Status: {upd.status}</span>
-                                            <span className="text-xs text-gray-500">{new Date(upd.createdAt).toLocaleString()}</span>
-                                          </div>
-                                          <p className="text-sm mt-1">{upd.reply}</p>
-                                          {upd.attachments && upd.attachments.length > 0 && (
-                                            <div className="mt-2 flex flex-wrap gap-2">
-                                              {upd.attachments.map((file) => (
-                                                <div key={file} className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded">
-                                                  <FileText size={12} className="text-blue-500" />
-                                                  <span className="text-xs">{file}</span>
-                                                  <button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button>
-                                                  <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          )}
-                                          <div className="text-xs text-gray-400 mt-1">by {upd.updatedBy.name}</div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Update form (ACC only) */}
-                                {isAccUser && isSubmitted && (
-                                  <div className="border-t pt-4 mt-4">
-                                    <h4 className="font-semibold mb-3">Add Update</h4>
-                                    <div className="space-y-4">
-                                      <div>
-                                        <label className="block text-sm font-medium mb-1">Status *</label>
-                                        <select
-                                          name="status"
-                                          value={updateForm.status}
-                                          onChange={handleUpdateFormChange}
-                                          className="w-full border rounded px-3 py-2 bg-white"
-                                        >
-                                          <option value="">Select status</option>
-                                          <option value="Pending">Pending</option>
-                                          <option value="Ongoing">Ongoing</option>
-                                          <option value="Completed">Completed</option>
-                                        </select>
-                                      </div>
-                                      <div>
-                                        <label className="block text-sm font-medium mb-1">Reply *</label>
-                                        <textarea
-                                          name="reply"
-                                          value={updateForm.reply}
-                                          onChange={handleUpdateFormChange}
-                                          rows={4}
-                                          className="w-full border rounded px-3 py-2 bg-white"
-                                        />
-                                      </div>
-                                      <div>
-                                        <label className="block text-sm font-medium mb-1">Attachments (optional)</label>
-                                        <div className="flex items-center gap-2">
-                                          <label className="cursor-pointer text-blue-600">
-                                            <Upload size={16} />
-                                            <input type="file" multiple onChange={handleUpdateFileSelect} className="hidden" />
-                                          </label>
-                                          <span className="text-xs text-gray-500">Upload additional files</span>
-                                        </div>
-                                        {updateAttachments.length > 0 && (
-                                          <div className="mt-2 space-y-1">
-                                            {updateAttachments.map((file, idx) => (
-                                              <div key={idx} className="flex justify-between items-center bg-white p-2 rounded border">
-                                                <span className="text-sm">{file.name}</span>
-                                                <button onClick={() => handleRemoveUpdateFile(idx)} className="text-red-500"><X size={14} /></button>
-                                              </div>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                      <div className="flex justify-end gap-3">
-                                        <button
-                                          onClick={() => toggleExpand(ref._id)}
-                                          className="px-4 py-2 border rounded-md hover:bg-gray-50"
-                                        >
-                                          Cancel
-                                        </button>
-                                        <button
-                                          onClick={() => submitUpdate(ref._id)}
-                                          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                                        >
-                                          Add Update
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                              ))}
+                              {ref.attachments.length > 2 && <span className="text-xs text-gray-500">+{ref.attachments.length - 2}</span>}
+                            </div>
+                          ) : <span className="text-gray-400 text-xs">No files</span>}
+                        </td>
+                        <td className="px-4 py-3 text-sm">
+                          <div className="flex flex-wrap gap-2">
+                            {/* VIEW & UPDATE (for ACC, submitted) */}
+                            {showViewUpdate && (
+                              <button onClick={() => openViewUpdateModal(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-purple-600">
+                                <Eye size={12} /> View & Update
+                              </button>
+                            )}
+                            {/* VIEW ONLY (for RAA or not submitted) */}
+                            {showViewOnly && (
+                              <button onClick={() => openViewUpdateModal(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
+                                <Eye size={12} /> View
+                              </button>
+                            )}
+                            {/* Edit (RAA only if not submitted) */}
+                            {canEdit && (
+                              <button onClick={() => {
+                                setEditData(ref);
+                                setFormData({
+                                  year: ref.year,
+                                  ain: ref.ain,
+                                  para_no: ref.para_no,
+                                  accountability_entity: ref.accountability_entity,
+                                  audit_report: ref.audit_report,
+                                  acc_observation: ref.acc_observation,
+                                  referral_no: ref.referral_no,
+                                  referral_date: ref.referral_date?.split("T")[0] || "",
+                                });
+                                setExistingAttachments(ref.attachments || []);
+                                setAttachments([]);
+                                setShowForm(true);
+                              }} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
+                                <Pencil size={12} /> Edit
+                              </button>
+                            )}
+                            {/* Submit to ACC (RAA only if not submitted) */}
+                            {canSubmit && (
+                              <button onClick={() => handleSubmitToACC(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-blue-600">
+                                <Send size={12} /> Submit
+                              </button>
+                            )}
+                            {/* Assign (ACC admin only if submitted and not assigned) */}
+                            {canAssign && (
+                              <button onClick={() => openAssignModal(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black">
+                                <UserPlus size={12} /> Assign
+                              </button>
+                            )}
+                            {/* Delete (RAA only if not submitted) */}
+                            {canDelete && (
+                              <button onClick={() => handleDelete(ref)} className="flex items-center gap-1 border rounded px-2 py-1 text-xs hover:border-black text-red-500">
+                                <Trash2 size={12} /> Delete
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     );
                   })}
                   {paginatedReferrals.length === 0 && (
@@ -1054,18 +906,126 @@ export default function RaaAccReferralPage() {
         </main>
       </div>
 
-      {/* Modal for long text (unchanged) */}
-      {selectedView && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md" style={{ animation: 'fadeIn 0.2s ease-out' }}>
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-md" onClick={() => setSelectedView(null)} />
-          <div className="relative bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col" style={{ animation: 'zoomIn 0.2s ease-out' }}>
-            <div className="flex justify-between items-center p-6 border-b">
-              <h3 className="text-xl font-semibold">{getModalTitle(selectedView.type)}</h3>
-              <button onClick={() => setSelectedView(null)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
+      {/* --- COMBINED VIEW & UPDATE MODAL --- */}
+      {viewUpdateModalOpen && currentViewReferral && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+              <h3 className="text-xl font-semibold">
+                {isAccUser && currentViewReferral.referredToACC ? "View & Update Referral" : "Referral Details"}
+              </h3>
+              <button onClick={() => setViewUpdateModalOpen(false)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
             </div>
-            <div className="flex-1 overflow-y-auto p-6"><div className="whitespace-pre-wrap text-gray-700 leading-relaxed">{selectedView.data || 'No content available'}</div></div>
-            <div className="flex justify-end p-6 border-t bg-gray-50 rounded-b-xl">
-              <button onClick={() => setSelectedView(null)} className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700">Close</button>
+            <div className="p-6 space-y-6">
+              {/* Referral details */}
+              <div className="grid md:grid-cols-2 gap-4">
+                <div><label className="text-sm font-medium">Year</label><p className="mt-1">{currentViewReferral.year}</p></div>
+                <div><label className="text-sm font-medium">AIN</label><p className="mt-1">{currentViewReferral.ain}</p></div>
+                <div><label className="text-sm font-medium">Para No</label><p className="mt-1">{currentViewReferral.para_no}</p></div>
+                <div><label className="text-sm font-medium">Accountability Entity</label><p className="mt-1">{currentViewReferral.accountability_entity}</p></div>
+                <div className="md:col-span-2"><label className="text-sm font-medium">Audit Report</label><p className="mt-1 whitespace-pre-wrap">{currentViewReferral.audit_report}</p></div>
+                <div className="md:col-span-2"><label className="text-sm font-medium">ACC Observation</label><p className="mt-1 whitespace-pre-wrap">{currentViewReferral.acc_observation}</p></div>
+                <div><label className="text-sm font-medium">Referral No</label><p className="mt-1">{currentViewReferral.referral_no}</p></div>
+                <div><label className="text-sm font-medium">Referral Date</label><p className="mt-1">{currentViewReferral.referral_date?.split("T")[0]}</p></div>
+                <div><label className="text-sm font-medium">Status</label><p className="mt-1">{currentViewReferral.status}</p></div>
+                <div><label className="text-sm font-medium">Assigned To</label><p className="mt-1">{currentViewReferral.assignedTo?.name || "Not assigned"}</p></div>
+              </div>
+
+              {/* Attachments */}
+              {currentViewReferral.attachments && currentViewReferral.attachments.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-2">Attachments</h4>
+                  <div className="space-y-2">
+                    {currentViewReferral.attachments.map((file, idx) => (
+                      <div key={idx} className="flex items-center gap-2 bg-gray-50 p-2 rounded">
+                        <FileText size={14} className="text-gray-500" />
+                        <span>{file}</span>
+                        <button onClick={() => handleViewFile(file)} className="text-blue-500 ml-auto"><Eye size={14} /></button>
+                        <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={14} /></button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Updates timeline */}
+              {currentViewReferral.updates && currentViewReferral.updates.length > 0 && (
+                <div>
+                  <h4 className="font-semibold mb-2">Updates</h4>
+                  <div className="space-y-4">
+                    {currentViewReferral.updates.map((upd, idx) => (
+                      <div key={idx} className="border-l-4 border-blue-500 pl-4 py-2 bg-gray-50 rounded">
+                        <div className="flex justify-between">
+                          <span className="font-medium">Status: {upd.status}</span>
+                          <span className="text-xs text-gray-500">{new Date(upd.createdAt).toLocaleString()}</span>
+                        </div>
+                        <p className="text-sm mt-1">{upd.reply}</p>
+                        {upd.attachments && upd.attachments.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {upd.attachments.map((file) => (
+                              <div key={file} className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded">
+                                <FileText size={12} className="text-blue-500" />
+                                <span className="text-xs">{file}</span>
+                                <button onClick={() => handleViewFile(file)} className="text-blue-500"><Eye size={12} /></button>
+                                <button onClick={() => handleDownloadFile(file)} className="text-green-500"><Download size={12} /></button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        <div className="text-xs text-gray-400 mt-1">by {upd.updatedBy.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Update form (ACC only) */}
+              {isAccUser && currentViewReferral.referredToACC && (
+                <div className="border-t pt-4 mt-6">
+                  <h4 className="font-semibold mb-3">Add Update</h4>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Status *</label>
+                      <select name="status" value={updateForm.status} onChange={handleUpdateFormChange} className="w-full border rounded px-3 py-2">
+                        <option value="">Select status</option>
+                        <option value="Pending">Pending</option>
+                        <option value="Ongoing">Ongoing</option>
+                        <option value="Completed">Completed</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Reply *</label>
+                      <textarea name="reply" value={updateForm.reply} onChange={handleUpdateFormChange} rows={4} className="w-full border rounded px-3 py-2" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Attachments (optional)</label>
+                      <div className="flex items-center gap-2">
+                        <label className="cursor-pointer text-blue-600">
+                          <Upload size={16} />
+                          <input type="file" multiple onChange={handleUpdateFileSelect} className="hidden" />
+                        </label>
+                        <span className="text-xs text-gray-500">Upload additional files</span>
+                      </div>
+                      {updateAttachments.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {updateAttachments.map((file, idx) => (
+                            <div key={idx} className="flex justify-between items-center bg-gray-50 p-2 rounded">
+                              <span className="text-sm">{file.name}</span>
+                              <button onClick={() => handleRemoveUpdateFile(idx)} className="text-red-500"><X size={14} /></button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex justify-end">
+                      <button onClick={submitUpdate} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Add Update</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="sticky bottom-0 bg-gray-50 p-4 text-right border-t">
+              <button onClick={() => setViewUpdateModalOpen(false)} className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700">Close</button>
             </div>
           </div>
         </div>
@@ -1090,6 +1050,23 @@ export default function RaaAccReferralPage() {
             <div className="flex justify-end gap-3 p-6 border-t bg-gray-50 rounded-b-xl">
               <button onClick={() => setShowAssignModal(false)} className="px-4 py-2 border rounded-md">Cancel</button>
               <button onClick={handleAssign} className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Assign</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal for long text (unchanged) */}
+      {selectedView && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-md" style={{ animation: 'fadeIn 0.2s ease-out' }}>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-md" onClick={() => setSelectedView(null)} />
+          <div className="relative bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[80vh] flex flex-col" style={{ animation: 'zoomIn 0.2s ease-out' }}>
+            <div className="flex justify-between items-center p-6 border-b">
+              <h3 className="text-xl font-semibold">{getModalTitle(selectedView.type)}</h3>
+              <button onClick={() => setSelectedView(null)} className="text-gray-500 hover:text-gray-700"><X size={24} /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-6"><div className="whitespace-pre-wrap text-gray-700 leading-relaxed">{selectedView.data || 'No content available'}</div></div>
+            <div className="flex justify-end p-6 border-t bg-gray-50 rounded-b-xl">
+              <button onClick={() => setSelectedView(null)} className="px-4 py-2 bg-gray-800 text-white rounded-md hover:bg-gray-700">Close</button>
             </div>
           </div>
         </div>
