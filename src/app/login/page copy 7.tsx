@@ -47,7 +47,7 @@ function LoginForm() {
         return;
       }
 
-      // ------ Fetch profile to determine agency and department ------
+      // ------ Fetch profile to determine agency for regular users ------
       try {
         const profileRes = await fetch("/api/user/profile", {
           headers: { Authorization: `Bearer ${data.token}` },
@@ -60,15 +60,8 @@ function LoginForm() {
 
         const profile = await profileRes.json();
         const agency = (profile.agencyName || "").toLowerCase();
-        const department = (profile.departmentName || "").toLowerCase();
 
-        // ---- Block Investigation department (or any containing "investigation") ----
-        if (department.includes("investigation")) {
-          router.push("/dashboard"); // or any other default page
-          return;
-        }
-
-        // Redirect based on agency (for non‑Investigation ACC, and RAA)
+        // Redirect based on agency
         if (agency.includes("oag") || agency.includes("attorney general")) {
           router.push("/admin/acc-oag-referral");
         } else if (
@@ -94,7 +87,7 @@ function LoginForm() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100 px-4">
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
-          {/* Logo Section */}
+          {/* Logo Section - Tightened spacing */}
           <div className="flex justify-center pt-2 pb-0">
             <Image
               src="/acc-insights.png"
@@ -106,7 +99,7 @@ function LoginForm() {
             />
           </div>
 
-          {/* Title */}
+          {/* Title - Reduced gap above TRUST word */}
           <div className="text-center px-6 -mt-2">
             <h4 className="text-[25px] font-semibold text-gray-900 mt-0 leading-tight">
               Tripartite Realtime Update Sharing Terminal

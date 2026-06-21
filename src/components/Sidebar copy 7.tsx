@@ -54,7 +54,6 @@ export default function Sidebar() {
   const [isAdminUser, setIsAdminUser] = useState<boolean>(false);
   const [isAgencyAdminUser, setIsAgencyAdminUser] = useState<boolean>(false);
   const [agencyName, setAgencyName] = useState<string>("");
-  const [departmentName, setDepartmentName] = useState<string>("");
   const [openSection, setOpenSection] = useState<"master" | "leave" | "offence" | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -104,11 +103,12 @@ export default function Sidebar() {
           setUserRole(normalizeRole(profile.role));
           if (typeof profile.isAgencyAdmin === "boolean")
             setIsAgencyAdminUser(profile.isAgencyAdmin);
-          setDepartmentName(profile.departmentName || "");
         }
 
+        // Try to get agency name from profile (if added)
         let fetchedAgencyName = profile.agencyName || "";
 
+        // If not, try fetching by agencyId
         if (!fetchedAgencyName && profile.agencyId) {
           try {
             const agencyRes = await fetch(`/api/agencies/${profile.agencyId}`, {
@@ -123,6 +123,7 @@ export default function Sidebar() {
           }
         }
 
+        // Fallback: derive from email domain
         if (!fetchedAgencyName && profile.email) {
           fetchedAgencyName = getAgencyFromEmail(profile.email);
         }
@@ -143,16 +144,14 @@ export default function Sidebar() {
 
   const isAdmin = isAdminUser || userRole === "Admin";
   const agencyLower = agencyName.toLowerCase();
-  const deptLower = departmentName.toLowerCase();
 
+  // ------ UPDATED AGENCY DETECTION (RAA now includes Royal Audit) ------
   const isAccAgency = agencyLower.includes("anti-corruption") || agencyLower.includes("acc");
   const isOagAgency = agencyLower.includes("attorney general") || agencyLower.includes("oag");
   const isRaaAgency =
     agencyLower.includes("royal audit") ||
     agencyLower.includes("audit authority") ||
-    agencyLower.includes("raa");
-
-  const isInvestigation = deptLower.includes("investigation");
+    agencyLower.includes("raa"); // keep for safety
 
   const isMasterActive = pathname === "/admin/department" || pathname === "/division";
   const isLeaveActive = pathname.startsWith("/dashboard/leave") ||
@@ -213,7 +212,7 @@ export default function Sidebar() {
 
       <nav className="flex-1 px-4 py-3 space-y-2 overflow-y-auto min-h-0">
         {isAdmin ? (
-          // ADMIN SECTION – show everything
+          // ADMIN SECTION – show everything (unchanged)
           <>
             <button onClick={() => toggleSection("master")} className={navButtonClass(isMasterActive)}>
               <Layers size={18} /> <span className="flex-1 text-left">Master</span>
@@ -263,10 +262,10 @@ export default function Sidebar() {
             </button>
           </>
         ) : (
-          // NON-ADMIN SECTION – show modules based on agency and department
+          // NON-ADMIN SECTION – show modules based on agency
           <>
-            {/* ACC and RAA users see cross-referral pages, EXCEPT Investigation dept */}
-            {((isAccAgency || isRaaAgency) && !isInvestigation) && (
+            {/* ACC and RAA users see both referral pages */}
+            {(isAccAgency || isRaaAgency) && (
               <>
                 <button onClick={() => router.push("/admin/acc-raa-referral")} className={navButtonClass(pathname.startsWith("/admin/acc-raa-referral"))}>
                   <Shield size={18} /> <span className="flex-1 text-left">Acc-Raa Referral</span>
@@ -277,8 +276,8 @@ export default function Sidebar() {
               </>
             )}
 
-            {/* Acc-Oag-Referral: ACC Investigation users OR OAG agency admins */}
-            {((isAccAgency && isInvestigation) || (isOagAgency && isAgencyAdminUser)) && (
+            {/* OAG agency admin gets Acc-Oag-Referral */}
+            {isOagAgency && isAgencyAdminUser && (
               <button onClick={() => router.push("/admin/acc-oag-referral")} className={navButtonClass(pathname.startsWith("/admin/acc-oag-referral"))}>
                 <Shield size={18} /> <span className="flex-1 text-left">Acc-Oag-Referral</span>
               </button>
